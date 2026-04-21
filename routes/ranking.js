@@ -66,13 +66,11 @@ router.get('/', async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 50;
         const offset = (page - 1) * limit;
-        const includeUnpaid = req.query.include_unpaid === 'true';
-        let excludeClause = '';
-        if (!includeUnpaid) {
-            excludeClause = ' AND p.precio_pagado = true';
-        }
+        // include_unpaid defaults to true so all tarjetas appear in the ranking
+        const paidOnly = req.query.paid_only === 'true';
+        const paidClause = paidOnly ? ' AND p.precio_pagado = true' : '';
         const result = await connection_1.db.query(`
-      SELECT 
+      SELECT
         COALESCE(r.puntos_totales, 0) as puntos_totales,
         COALESCE(r.exactos_count, 0) as exactos_count,
         COALESCE(r.aciertos_celeste, 0) as aciertos_celeste,
@@ -88,35 +86,34 @@ router.get('/', async (req, res) => {
         p.id as planilla_id,
         r.position as official_position,
         ROW_NUMBER() OVER (
-          ORDER BY 
-            r.puntos_totales DESC,
-            r.aciertos_celeste DESC,
-            r.aciertos_rojo DESC,
-            r.aciertos_verde DESC,
-            r.aciertos_amarillo DESC
+          ORDER BY
+            COALESCE(r.puntos_totales, 0) DESC,
+            COALESCE(r.aciertos_celeste, 0) DESC,
+            COALESCE(r.aciertos_rojo, 0) DESC,
+            COALESCE(r.aciertos_verde, 0) DESC,
+            COALESCE(r.aciertos_amarillo, 0) DESC
         ) as virtual_position
-      FROM ranking r
-      JOIN planillas p ON r.planilla_id = p.id
+      FROM planillas p
+      LEFT JOIN ranking r ON r.planilla_id = p.id
       JOIN users u ON p.user_id = u.id
-      WHERE 1=1 ${excludeClause}
-      ORDER BY 
-        r.position ASC NULLS LAST,
-        r.puntos_totales DESC, 
-        r.aciertos_celeste DESC,
-        r.aciertos_rojo DESC,
-        r.aciertos_verde DESC,
-        r.aciertos_amarillo DESC
+      WHERE 1=1 ${paidClause}
+      ORDER BY
+        COALESCE(r.puntos_totales, 0) DESC,
+        COALESCE(r.aciertos_celeste, 0) DESC,
+        COALESCE(r.aciertos_rojo, 0) DESC,
+        COALESCE(r.aciertos_verde, 0) DESC,
+        COALESCE(r.aciertos_amarillo, 0) DESC
       LIMIT $1 OFFSET $2
     `, [limit, offset]);
         const countResult = await connection_1.db.query(`
-      SELECT COUNT(*) FROM ranking r
-      JOIN planillas p ON r.planilla_id = p.id
-      WHERE 1=1 ${excludeClause}
+      SELECT COUNT(*) FROM planillas p
+      LEFT JOIN ranking r ON r.planilla_id = p.id
+      WHERE 1=1 ${paidClause}
     `);
         // Mapear los resultados para usar position correcta
         const mappedRanking = result.rows.map(row => ({
             ...row,
-            position: row.precio_pagado ? row.official_position : row.virtual_position,
+            position: row.official_position || row.virtual_position,
             is_virtual: !row.precio_pagado
         }));
         res.json({
