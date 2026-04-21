@@ -49,7 +49,7 @@ router.post('/register', rateLimit_1.authLimiter, validation_1.registerValidatio
 router.post('/login', rateLimit_1.loginLimiter, validation_1.loginValidation, async (req, res) => {
     try {
         const { email, password } = req.body;
-        const result = await connection_1.db.query('SELECT id, nombre, email, hash_pass, rol, idioma_pref, tema_equipo, email_verified, foto_url FROM users WHERE email = $1', [email]);
+        const result = await connection_1.db.query('SELECT id, nombre, email, hash_pass, rol, idioma_pref, tema_equipo, email_verified, foto_url, whatsapp_number, whatsapp_consent FROM users WHERE email = $1', [email]);
         if (result.rows.length === 0) {
             return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
         }
@@ -273,11 +273,11 @@ router.post('/resend-code', rateLimit_1.authLimiter, async (req, res) => {
 });
 router.post('/complete-registration', rateLimit_1.authLimiter, async (req, res) => {
     try {
-        const { userId, tema_equipo } = req.body;
+        const { userId, tema_equipo, telefono } = req.body;
         if (!userId) {
             return res.status(400).json({ success: false, error: 'userId es requerido' });
         }
-        const result = await connection_1.db.query('SELECT id, email, email_verified, nombre, rol, idioma_pref, foto_url FROM users WHERE id = $1', [userId]);
+        const result = await connection_1.db.query('SELECT id, email, email_verified, nombre, rol, idioma_pref, foto_url, whatsapp_number, whatsapp_consent FROM users WHERE id = $1', [userId]);
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Usuario no encontrado. Por favor verifica tu email primero.' });
         }
@@ -285,8 +285,14 @@ router.post('/complete-registration', rateLimit_1.authLimiter, async (req, res) 
         if (!user.email_verified) {
             return res.status(400).json({ success: false, error: 'Debes verificar tu email primero' });
         }
-        if (tema_equipo) {
-            await connection_1.db.query('UPDATE users SET tema_equipo = $1 WHERE id = $2', [tema_equipo, userId]);
+        const updates = [];
+        const params = [];
+        let idx = 1;
+        if (tema_equipo) { updates.push(`tema_equipo = $${idx++}`); params.push(tema_equipo); }
+        if (telefono) { updates.push(`telefono = $${idx++}`); params.push(telefono.replace(/\D/g, '')); }
+        if (updates.length > 0) {
+            params.push(userId);
+            await connection_1.db.query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`, params);
         }
         const token = (0, utils_1.generateToken)({ userId: user.id, email: user.email, rol: user.rol });
         const refreshToken = (0, utils_1.generateRefreshToken)({ userId: user.id, email: user.email, rol: user.rol });
