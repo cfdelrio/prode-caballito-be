@@ -1,19 +1,28 @@
 "use strict";
 
-const webpush = require('web-push');
 const { db } = require('../db/connection');
 
-webpush.setVapidDetails(
-    'mailto:admin@prodecaballito.com',
-    process.env.VAPID_PUBLIC_KEY  || 'BAXBLdwtMlYJnlIWkjPlOFMgvdjeVYy6Bk-ARQ_5_YRHLtaaflqHnTB9yP6Dr2iABVLroBs_lZL4uTS8ju00Flk',
-    process.env.VAPID_PRIVATE_KEY || '5cVTiBKVU9RpxC-N2AVuK_1XSZnWundQPjFRZLvNdEk'
-);
+// Lazy-load web-push para que Lambda arranque aunque el paquete no esté
+// en el deployment (evita ImportModuleError en cold start)
+let _webpush = null;
+function getWebpush() {
+    if (!_webpush) {
+        _webpush = require('web-push');
+        _webpush.setVapidDetails(
+            'mailto:admin@prodecaballito.com',
+            process.env.VAPID_PUBLIC_KEY  || 'BAXBLdwtMlYJnlIWkjPlOFMgvdjeVYy6Bk-ARQ_5_YRHLtaaflqHnTB9yP6Dr2iABVLroBs_lZL4uTS8ju00Flk',
+            process.env.VAPID_PRIVATE_KEY || '5cVTiBKVU9RpxC-N2AVuK_1XSZnWundQPjFRZLvNdEk'
+        );
+    }
+    return _webpush;
+}
 
 /**
  * Send a push notification to a single subscription row from DB.
  * Automatically removes expired/invalid subscriptions (410 Gone).
  */
 const sendPush = async (sub, payload) => {
+    const webpush = getWebpush();
     const subscription = {
         endpoint: sub.endpoint,
         keys: { p256dh: sub.p256dh, auth: sub.auth },
