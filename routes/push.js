@@ -21,9 +21,11 @@ router.post('/subscribe', auth_1.authMiddleware, async (req, res) => {
             return res.status(400).json({ success: false, error: 'endpoint y keys (p256dh, auth) requeridos' });
         }
         await connection_1.db.query(
-            `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (endpoint) DO UPDATE SET user_id = $1, p256dh = $3, auth = $4`,
+            'DELETE FROM push_subscriptions WHERE endpoint = $1',
+            [endpoint]
+        );
+        await connection_1.db.query(
+            'INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES ($1, $2, $3, $4)',
             [req.user.userId, endpoint, keys.p256dh, keys.auth]
         );
         res.json({ success: true });
