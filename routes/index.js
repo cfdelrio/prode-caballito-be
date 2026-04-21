@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.themeRoutes = exports.matchdaysRoutes = exports.configRoutes = exports.subscriptionsRoutes = exports.messagesRoutes = exports.planillasRoutes = exports.notificationsRoutes = exports.commentsRoutes = exports.rankingRoutes = exports.betsRoutes = exports.matchesRoutes = exports.usersRoutes = exports.authRoutes = exports.tournamentsRoutes = void 0;
+exports.pushRoutes = exports.themeRoutes = exports.matchdaysRoutes = exports.configRoutes = exports.subscriptionsRoutes = exports.messagesRoutes = exports.planillasRoutes = exports.notificationsRoutes = exports.commentsRoutes = exports.rankingRoutes = exports.betsRoutes = exports.matchesRoutes = exports.usersRoutes = exports.authRoutes = exports.tournamentsRoutes = void 0;
 var auth_1 = require("./auth");
 Object.defineProperty(exports, "authRoutes", { enumerable: true, get: function () { return __importDefault(auth_1).default; } });
 var users_1 = require("./users");
@@ -36,4 +36,6 @@ var matchdays_1 = require("./matchdays");
 Object.defineProperty(exports, "matchdaysRoutes", { enumerable: true, get: function () { return matchdays_1; } });
 var imagemail_1 = require("./imagemail");
 Object.defineProperty(exports, "imagemailRoutes", { enumerable: true, get: function () { return __importDefault(imagemail_1).default; } });
+var push_1 = require("./push");
+Object.defineProperty(exports, "pushRoutes", { enumerable: true, get: function () { return __importDefault(push_1).default; } });
 //# sourceMappingURL=index.js.map

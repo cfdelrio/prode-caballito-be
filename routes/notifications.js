@@ -40,7 +40,7 @@ router.post('/', auth_1.authMiddleware, async (req, res) => {
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
-router.post('/send', async (req, res) => {
+router.post('/send', auth_1.authMiddleware, auth_1.requireAdmin, async (req, res) => {
     try {
         const { user_id, match_id, type, payload } = req.body;
         const result = await connection_1.db.query(`INSERT INTO notifications (user_id, match_id, type, payload, status, sent_at)
