@@ -53,9 +53,32 @@ router.delete('/unsubscribe', auth_1.authMiddleware, async (req, res) => {
     }
 });
 
+// List push subscriptions for the authenticated user (debug)
+router.get('/my-subscriptions', auth_1.authMiddleware, async (req, res) => {
+    try {
+        const result = await connection_1.db.query(
+            'SELECT id, endpoint, created_at FROM push_subscriptions WHERE user_id = $1',
+            [req.user.userId]
+        );
+        res.json({ success: true, data: { count: result.rows.length, subscriptions: result.rows } });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Send a test push to the authenticated user's own subscriptions
 router.post('/test', auth_1.authMiddleware, async (req, res) => {
     try {
+        const subsResult = await connection_1.db.query(
+            'SELECT id FROM push_subscriptions WHERE user_id = $1',
+            [req.user.userId]
+        );
+        if (subsResult.rows.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'No tenés suscripciones push activas. Activá las notificaciones desde tu Perfil primero.',
+            });
+        }
         const { pushToUser } = require('../services/push');
         await pushToUser(req.user.userId, {
             title: '🔔 Notificación de prueba',
@@ -63,7 +86,7 @@ router.post('/test', auth_1.authMiddleware, async (req, res) => {
             url: '/',
             icon: '/favicon.svg',
         });
-        res.json({ success: true, message: 'Push enviado a tus suscripciones' });
+        res.json({ success: true, message: `Push enviado a ${subsResult.rows.length} suscripción(es)` });
     } catch (error) {
         console.error('Push test error:', error);
         res.status(500).json({ success: false, error: 'Error al enviar push: ' + error.message });
