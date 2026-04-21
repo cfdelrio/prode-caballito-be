@@ -37,6 +37,7 @@ app.use('/api/theme', routes_1.themeRoutes);
 app.use('/api/tournaments', routes_1.tournamentsRoutes);
 app.use('/api/matchdays', routes_1.matchdaysRoutes);
 app.use('/api/imagemail', routes_1.imagemailRoutes);
+app.use('/api/push', routes_1.pushRoutes);
 app.use((err, req, res, next) => {
     console.error('Error:', err);
     res.status(err.status || 500).json({
