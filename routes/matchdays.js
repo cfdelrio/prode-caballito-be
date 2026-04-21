@@ -556,11 +556,68 @@ router.get('/:id/reactions', async (req, res) => {
 });
 
 /**
+ * POST /matchdays/test-email-only   (auth required)
+ * Manda un email de prueba al user autenticado con una imagen pública
+ * fija. Síncrono — surface errores en la respuesta HTTP. Sirve para
+ * aislar si el problema está en OpenAI/Lambda o en imagemail/SES.
+ */
+router.post('/test-email-only', auth_1.authMiddleware, async (req, res) => {
+  try {
+    const userRes = await connection_1.db.query(
+      'SELECT id, nombre, email FROM users WHERE id = $1',
+      [req.user.userId]
+    );
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+    }
+    const me = userRes.rows[0];
+    const publicImage = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/React-icon.svg/1200px-React-icon.svg.png';
+
+    const body = JSON.stringify({
+      to:      me.email,
+      uri:     publicImage,
+      subject: '🧪 Test email (prode)',
+      message: `Hola ${me.nombre}, este es un test del pipeline de email.`,
+    });
+
+    const result = await new Promise((resolve, reject) => {
+      const r = https.request({
+        hostname: process.env.API_HOSTNAME || 't49euho172.execute-api.us-east-1.amazonaws.com',
+        path: '/prod/api/imagemail',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        timeout: 25000,
+      }, (resp) => {
+        let raw = '';
+        resp.on('data', c => raw += c);
+        resp.on('end', () => resolve({ statusCode: resp.statusCode, body: raw }));
+      });
+      r.on('error', reject);
+      r.on('timeout', () => { r.destroy(); reject(new Error('imagemail timeout')); });
+      r.write(body);
+      r.end();
+    });
+
+    res.json({
+      success: true,
+      data: {
+        recipient:       me.email,
+        imagemailStatus: result.statusCode,
+        imagemailBody:   result.body,
+      },
+    });
+  } catch (err) {
+    console.error('POST /matchdays/test-email-only error:', err);
+    res.status(500).json({ success: false, error: String(err.message || err) });
+  }
+});
+
+/**
  * POST /matchdays/test-winner-notification   (auth required)
  * Body: { matchday_name?, points? }
- * Corre processWinnerNotification inline (fire-and-forget) — manda la carta
- * FIFA SOLO al email del usuario autenticado. Responde 200 inmediato;
- * Lambda mantiene la ejecución viva hasta que la promesa termine.
+ * Invoca processWinnerNotification en modo aislado — manda la carta FIFA
+ * SOLO al email del usuario autenticado (target_email se ignora para
+ * prevenir abuso). Útil para testear el pipeline OpenAI + imagemail.
  */
 router.post('/test-winner-notification', auth_1.authMiddleware, async (req, res) => {
   try {
