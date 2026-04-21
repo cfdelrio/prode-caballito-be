@@ -53,4 +53,21 @@ router.delete('/unsubscribe', auth_1.authMiddleware, async (req, res) => {
     }
 });
 
+// Send a test push to the authenticated user's own subscriptions
+router.post('/test', auth_1.authMiddleware, async (req, res) => {
+    try {
+        const { pushToUser } = require('../services/push');
+        await pushToUser(req.user.userId, {
+            title: '🔔 Notificación de prueba',
+            body: 'Si ves esto, las push notifications están funcionando correctamente.',
+            url: '/',
+            icon: '/favicon.svg',
+        });
+        res.json({ success: true, message: 'Push enviado a tus suscripciones' });
+    } catch (error) {
+        console.error('Push test error:', error);
+        res.status(500).json({ success: false, error: 'Error al enviar push: ' + error.message });
+    }
+});
+
 exports.default = router;
