@@ -38,7 +38,6 @@ function openAiPost(path, body) {
 
 async function processWinnerNotification(winner, matchday, winnerEmail, allEmails = []) {
   try {
-    // 1. Find top scorers with GPT-4o (null = not found)
     let scorerNames = null;
     try {
       const scorersRes = await openAiPost('/v1/chat/completions', {
@@ -557,16 +556,14 @@ router.get('/:id/reactions', async (req, res) => {
 });
 
 /**
- * POST /matchdays/test-winner-notification   (admin only)
- * Body: { target_email?, matchday_name?, points? }
- * Invoca processWinnerNotification en modo aislado — manda email solo
- * al target_email (default: el admin logueado). No toca datos reales.
+ * POST /matchdays/test-winner-notification   (auth required)
+ * Body: { matchday_name?, points? }
+ * Invoca processWinnerNotification en modo aislado — manda la carta FIFA
+ * SOLO al email del usuario autenticado (target_email se ignora para
+ * prevenir abuso). Útil para testear el pipeline OpenAI + imagemail.
  */
 router.post('/test-winner-notification', auth_1.authMiddleware, async (req, res) => {
   try {
-    if (req.user.rol !== 'admin') {
-      return res.status(403).json({ success: false, error: 'Admin requerido' });
-    }
     const userRes = await connection_1.db.query(
       'SELECT id, nombre, email, foto_url FROM users WHERE id = $1',
       [req.user.userId]
@@ -575,7 +572,8 @@ router.post('/test-winner-notification', auth_1.authMiddleware, async (req, res)
       return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
     }
     const me = userRes.rows[0];
-    const targetEmail  = req.body.target_email  || me.email;
+    // Hardcoded al email del user autenticado — evita abuso como vector de spam
+    const targetEmail  = me.email;
     const matchdayName = req.body.matchday_name || 'Fecha de Prueba';
     const points       = typeof req.body.points === 'number' ? req.body.points : 42;
 
