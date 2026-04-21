@@ -1,0 +1,53 @@
+name: Deploy to AWS Lambda
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install production dependencies
+        run: npm ci --omit=dev
+
+      - name: Create deployment package
+        run: |
+          # Lambda handler es lambda_deploy/lambda.handler
+          # El zip debe tener los archivos dentro de lambda_deploy/
+          mkdir -p /tmp/lambda_deploy
+          cp -r . /tmp/lambda_deploy/
+          cd /tmp
+          zip -r deploy.zip lambda_deploy/ \
+            --exclude "lambda_deploy/.git/*" \
+            --exclude "lambda_deploy/.github/*" \
+            --exclude "lambda_deploy/*.map"
+
+      - name: Deploy to Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name prode-api \
+            --zip-file fileb:///tmp/deploy.zip \
+            --region us-east-1
+
+          # Esperar a que termine de actualizar
+          aws lambda wait function-updated \
+            --function-name prode-api \
+            --region us-east-1
+
+          echo "✅ Deploy completado"
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION:    us-east-1
