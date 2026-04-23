@@ -6,7 +6,7 @@ const auth_1 = require("../middleware/auth");
 const validation_1 = require("../middleware/validation");
 const scoring_1 = require("../services/scoring");
 const email_1 = require("../services/email");
-const { sendWhatsApp } = require("../services/whatsapp");
+const { sendWhatsAppTemplate } = require("../services/whatsapp");
 const { pushToUser, pushToAll } = require("../services/push");
 const tournamentRanking_1 = require("../services/tournamentRanking");
 const router = (0, express_1.Router)();
@@ -197,9 +197,10 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
                     }).catch(e => console.error('[push] new leader error:', e.message));
                     // WhatsApp al nuevo líder
                     if (newLeader.whatsapp_number && newLeader.whatsapp_consent) {
-                        await sendWhatsApp({
+                        await sendWhatsAppTemplate({
                             to: newLeader.whatsapp_number,
-                            body: `🔥 ¡Sos el nuevo líder del PRODE Caballito!\nCon ${newLeader.puntos_totales} puntos estás en el puesto #1.\n\n¡No lo sueltes! 👉 prodecaballito.com/ranking`,
+                            templateName: 'prode_nuevo_lider',
+                            variables: { '1': String(newLeader.puntos_totales) },
                         }).catch(e => console.error('WA new leader error:', e.message));
                     }
                 }
@@ -237,9 +238,18 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
                         // WhatsApp
                         if (userRanking.whatsapp_number && userRanking.whatsapp_consent) {
                             const betLine = `🎯 Tu pronóstico: ${bet.goles_local}-${bet.goles_visitante} → +${score.puntos}pts`;
-                            const msg = `⚽ ${match.home_team} ${resultado_local}-${resultado_visitante} ${match.away_team}\n\n${betLine}\n🏆 Estás #${userRanking.position} en el ranking\n\n👉 prodecaballito.com/ranking`;
-                            await sendWhatsApp({ to: userRanking.whatsapp_number, body: msg })
-                                .catch(e => console.error(`Result WA error for ${userId}:`, e.message));
+                            await sendWhatsAppTemplate({
+                                to: userRanking.whatsapp_number,
+                                templateName: 'prode_resultado_partido',
+                                variables: {
+                                    '1': match.home_team,
+                                    '2': String(resultado_local),
+                                    '3': String(resultado_visitante),
+                                    '4': match.away_team,
+                                    '5': betLine,
+                                    '6': String(userRanking.position),
+                                },
+                            }).catch(e => console.error(`Result WA error for ${userId}:`, e.message));
                         }
                     } catch(betErr) {
                         console.error('Result notification error for bet:', betErr.message);

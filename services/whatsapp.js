@@ -7,6 +7,21 @@ const WHITELIST = process.env.WHATSAPP_WHITELIST
     ? process.env.WHATSAPP_WHITELIST.split(',').map(n => n.trim()).filter(Boolean)
     : null;
 
+// Templates aprobados por Meta via Twilio Content API
+const TEMPLATES = {
+    // Body: "🔥 ¡Sos el nuevo líder del PRODE Caballito!\nCon {{1}} puntos estás en el puesto #1.\n\n¡No lo sueltes! 👉 prodecaballito.com/ranking"
+    // Variables: { 1: puntos }
+    prode_nuevo_lider: 'HX3d2e4229b56b20d222ae85b64a2e607e',
+
+    // Body: "⚽ {{1}} {{2}}-{{3}} {{4}}\n\n{{5}}\n🏆 Estás #{{6}} en el ranking\n\n👉 prodecaballito.com/ranking"
+    // Variables: { 1: equipo_local, 2: goles_local, 3: goles_visitante, 4: equipo_visitante, 5: betLine, 6: posicion }
+    prode_resultado_partido: 'HX7ed5ef7d53402b094a81ecd8d4cbf5af',
+
+    // Body: "🏆 ¡{{1}} ganó {{2}}!\nCon {{3}} puntos exactos.\n\n👉 prodecaballito.com/ranking"
+    // Variables: { 1: nombre_ganador, 2: nombre_fecha, 3: puntos }
+    prode_ganador_fecha: 'HX037ab7e8789f1de1575a26737ff8a233',
+};
+
 const sendWhatsApp = async ({ to, body }) => {
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken  = process.env.TWILIO_AUTH_TOKEN;
@@ -55,4 +70,34 @@ const sendSMS = async ({ to, body }) => {
     return message;
 };
 
-module.exports = { sendWhatsApp, sendSMS };
+const sendWhatsAppTemplate = async ({ to, templateName, variables }) => {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken  = process.env.TWILIO_AUTH_TOKEN;
+    const from       = process.env.TWILIO_WHATSAPP_FROM;
+
+    if (!accountSid || !authToken || !from) {
+        console.warn('[whatsapp-template] Twilio env vars not set, skipping');
+        return;
+    }
+
+    const contentSid = TEMPLATES[templateName];
+    if (!contentSid) {
+        console.error(`[whatsapp-template] Template desconocido: ${templateName}`);
+        return;
+    }
+
+    const normalized = to.startsWith('+') ? to : `+${to}`;
+    console.log(`[whatsapp-template] enviando "${templateName}" a ${normalized}`);
+
+    const twilio = require('twilio')(accountSid, authToken);
+    const message = await twilio.messages.create({
+        from,
+        to: `whatsapp:${normalized}`,
+        contentSid,
+        contentVariables: JSON.stringify(variables),
+    });
+    console.log(`[whatsapp-template] "${templateName}" → ${normalized} — sid: ${message.sid}`);
+    return message;
+};
+
+module.exports = { sendWhatsApp, sendSMS, sendWhatsAppTemplate, TEMPLATES };

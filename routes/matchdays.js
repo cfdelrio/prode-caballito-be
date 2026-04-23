@@ -5,7 +5,7 @@ const connection_1 = require("../db/connection");
 const auth_1 = require("../middleware/auth");
 const scoring_1 = require("../services/scoring");
 const https = require("https");
-const { sendWhatsApp } = require("../services/whatsapp");
+const { sendWhatsAppTemplate } = require("../services/whatsapp");
 const router = (0, express_1.Router)();
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -187,11 +187,16 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
         const waUsers = await connection_1.db.query(
             `SELECT whatsapp_number FROM users WHERE whatsapp_number IS NOT NULL AND whatsapp_consent = true`
         );
-        const scorerLine = scorerNames ? `Goleadores: ${scorerNames}` : '';
-        const waMsg = `🏆 ¡${winner.user_name} ganó ${matchday.name}!\nCon ${winner.points} puntos exactos.${scorerLine ? '\n' + scorerLine : ''}\n\n👉 prodecaballito.com/ranking`;
         for (const u of waUsers.rows) {
-            await sendWhatsApp({ to: u.whatsapp_number, body: waMsg })
-                .catch(e => console.error(`Winner WA error for ${u.whatsapp_number}:`, e.message));
+            await sendWhatsAppTemplate({
+                to: u.whatsapp_number,
+                templateName: 'prode_ganador_fecha',
+                variables: {
+                    '1': winner.user_name,
+                    '2': matchday.name,
+                    '3': String(winner.points),
+                },
+            }).catch(e => console.error(`Winner WA error for ${u.whatsapp_number}:`, e.message));
         }
         console.log(`Winner WA sent to ${waUsers.rows.length} users`);
     } catch(waErr) {
