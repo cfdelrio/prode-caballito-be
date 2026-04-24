@@ -186,5 +186,24 @@ router.post('/weekly-email', authMiddleware, requireAdmin, async (req, res) => {
     }
 });
 
+// POST /api/admin/winner-image
+// Body: { image_url: "...", matchday_label: "Fecha 3" }
+router.post('/winner-image', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { image_url, matchday_label } = req.body;
+        if (!image_url) return res.status(400).json({ success: false, error: 'image_url requerida' });
+        const value = JSON.stringify({ image_url, matchday_label, updated_at: new Date().toISOString() });
+        await db.query(`
+            INSERT INTO config (key, value, updated_at, updated_by)
+            VALUES ($1, $2, NOW(), $3)
+            ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW(), updated_by = $3
+        `, ['ganador_fecha', value, req.user.userId]);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[winner-image] Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 module.exports = router;
 module.exports.sendWeeklyEmailBatch = sendWeeklyEmailBatch;
