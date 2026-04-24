@@ -526,147 +526,256 @@ const sendNewLeaderEmail = async ({ userEmail, userName, puntos, homeTeam, awayT
 };
 exports.sendNewLeaderEmail = sendNewLeaderEmail;
 
-const sendWeeklyDigestEmail = async ({ userEmail, userName, rankingPos, puntos, upcomingMatches, pendingCount, top3 }) => {
-    const fmtAR = (d) => new Date(d).toLocaleString('es-AR', {
-        timeZone: 'America/Argentina/Buenos_Aires',
-        weekday: 'short', day: 'numeric', month: 'short',
-        hour: '2-digit', minute: '2-digit'
-    });
+// ── Weekly summary email ─────────────────────────────────────────────────────
 
-    const positionEmoji = rankingPos === 1 ? '🥇' : rankingPos === 2 ? '🥈' : rankingPos === 3 ? '🥉' : '🏅';
-    const hasRanking = rankingPos != null && puntos > 0;
+const TEAM_FLAGS = {
+    'argentina': '🇦🇷', 'brasil': '🇧🇷', 'brazil': '🇧🇷',
+    'france': '🇫🇷', 'francia': '🇫🇷',
+    'spain': '🇪🇸', 'españa': '🇪🇸',
+    'germany': '🇩🇪', 'alemania': '🇩🇪',
+    'england': '🏴󠁧󠁢󠁥󠁮󠁧󠁿', 'inglaterra': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+    'italy': '🇮🇹', 'italia': '🇮🇹',
+    'portugal': '🇵🇹',
+    'netherlands': '🇳🇱', 'holanda': '🇳🇱', 'países bajos': '🇳🇱',
+    'croatia': '🇭🇷', 'croacia': '🇭🇷',
+    'morocco': '🇲🇦', 'marruecos': '🇲🇦',
+    'usa': '🇺🇸', 'estados unidos': '🇺🇸', 'united states': '🇺🇸',
+    'canada': '🇨🇦', 'canadá': '🇨🇦',
+    'mexico': '🇲🇽', 'méxico': '🇲🇽',
+    'japan': '🇯🇵', 'japón': '🇯🇵',
+    'south korea': '🇰🇷', 'corea del sur': '🇰🇷', 'corea': '🇰🇷',
+    'senegal': '🇸🇳', 'ecuador': '🇪🇨', 'uruguay': '🇺🇾',
+    'colombia': '🇨🇴', 'chile': '🇨🇱', 'peru': '🇵🇪', 'perú': '🇵🇪',
+    'bolivia': '🇧🇴', 'venezuela': '🇻🇪', 'paraguay': '🇵🇾',
+    'switzerland': '🇨🇭', 'suiza': '🇨🇭',
+    'belgium': '🇧🇪', 'bélgica': '🇧🇪',
+    'poland': '🇵🇱', 'polonia': '🇵🇱',
+    'denmark': '🇩🇰', 'dinamarca': '🇩🇰',
+    'austria': '🇦🇹', 'sweden': '🇸🇪', 'suecia': '🇸🇪',
+    'norway': '🇳🇴', 'noruega': '🇳🇴',
+    'jordan': '🇯🇴', 'jordania': '🇯🇴',
+    'nigeria': '🇳🇬', 'ghana': '🇬🇭', 'cameroon': '🇨🇲', 'camerún': '🇨🇲',
+    'saudi arabia': '🇸🇦', 'arabia saudita': '🇸🇦',
+    'iran': '🇮🇷', 'australia': '🇦🇺', 'new zealand': '🇳🇿',
+    'turkey': '🇹🇷', 'turquía': '🇹🇷',
+    'serbia': '🇷🇸', 'ukraine': '🇺🇦', 'ucrania': '🇺🇦',
+    'czech republic': '🇨🇿', 'república checa': '🇨🇿',
+    'romania': '🇷🇴', 'rumania': '🇷🇴',
+    'hungary': '🇭🇺', 'hungría': '🇭🇺',
+    'scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'escocia': '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
+    'wales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿', 'gales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿',
+};
 
-    const top3Rows = (top3 || []).map((r, i) => {
-        const medal = ['🥇', '🥈', '🥉'][i] || `#${r.position}`;
-        return `<tr>
-          <td style="padding:8px 0;font-size:14px;color:#374151;font-family:Arial,sans-serif;">
-            ${medal} <strong>${r.user_name}</strong>
-          </td>
-          <td style="padding:8px 0;font-size:14px;font-weight:900;color:#0042A5;text-align:right;font-family:Arial,sans-serif;">
-            ${r.puntos_totales} pts
+function getTeamFlag(team) {
+    if (!team) return '⚽';
+    return TEAM_FLAGS[team.toLowerCase().trim()] || '⚽';
+}
+
+function buildTightMatchSection(tightMatch) {
+    if (!tightMatch || tightMatch.resultado_local == null) return '';
+    const homeFlag = getTeamFlag(tightMatch.home_team);
+    const awayFlag = getTeamFlag(tightMatch.away_team);
+    const hits = parseInt(tightMatch.exact_hits) || 0;
+    const hitsText = hits === 0
+        ? '¡Nadie acertó el resultado exacto!'
+        : hits === 1
+            ? '¡Solo 1 jugador acertó el resultado exacto!'
+            : `¡Solo ${hits} jugadores acertaron el resultado exacto!`;
+
+    return `
+      <tr>
+        <td style="padding: 0 28px 28px;">
+          <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f9fafb" style="border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:14px 20px;border-bottom:1px solid #eef2f8;">
+                <p style="margin:0;font-size:12px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.5px;font-family:Arial,sans-serif;">🔥 PARTIDO MÁS REÑIDO DE LA SEMANA</p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:20px;">
+                <table cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td align="center" style="padding:0 14px;">
+                      <p style="margin:0;font-size:30px;line-height:1;">${homeFlag}</p>
+                      <p style="margin:6px 0 0;font-size:11px;color:#6b7280;font-family:Arial,sans-serif;">${tightMatch.home_team}</p>
+                    </td>
+                    <td align="center" style="padding:0 10px;">
+                      <p style="margin:0;font-size:36px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;letter-spacing:2px;">${tightMatch.resultado_local} - ${tightMatch.resultado_visitante}</p>
+                    </td>
+                    <td align="center" style="padding:0 14px;">
+                      <p style="margin:0;font-size:30px;line-height:1;">${awayFlag}</p>
+                      <p style="margin:6px 0 0;font-size:11px;color:#6b7280;font-family:Arial,sans-serif;">${tightMatch.away_team}</p>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:14px 0 0;font-size:13px;color:#DC2626;font-weight:600;font-family:Arial,sans-serif;">${hitsText}</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>`;
+}
+
+function buildUpcomingSection(upcomingMatches, appUrl) {
+    if (!upcomingMatches || upcomingMatches.length === 0) return '';
+    const rows = upcomingMatches.map(m => {
+        const homeFlag = getTeamFlag(m.home_team);
+        const awayFlag = getTeamFlag(m.away_team);
+        const d = new Date(m.start_time);
+        const dateStr = d.toLocaleDateString('es-AR', {
+            timeZone: 'America/Argentina/Buenos_Aires',
+            weekday: 'short', day: 'numeric', month: 'numeric',
+        });
+        const timeStr = d.toLocaleTimeString('es-AR', {
+            timeZone: 'America/Argentina/Buenos_Aires',
+            hour: '2-digit', minute: '2-digit',
+        });
+        return `
+        <tr>
+          <td style="padding:14px 20px;border-bottom:1px solid #f0f4fb;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td width="28" align="center" style="font-size:20px;line-height:1;">${homeFlag}</td>
+                <td style="padding:0 8px;font-family:Arial,sans-serif;">
+                  <p style="margin:0;font-size:13px;font-weight:700;color:#1f2937;">${m.home_team} vs ${m.away_team}</p>
+                  <p style="margin:2px 0 0;font-size:11px;color:#6b7280;">${dateStr} &middot; ${timeStr} hs</p>
+                </td>
+                <td align="right" width="76">
+                  <a href="${appUrl}" style="display:inline-block;background:#FFCC00;color:#001A4B;font-size:12px;font-weight:700;text-decoration:none;padding:7px 14px;border-radius:20px;font-family:Arial,sans-serif;">Apostar</a>
+                </td>
+                <td width="28" align="center" style="font-size:20px;line-height:1;padding-left:6px;">${awayFlag}</td>
+              </tr>
+            </table>
           </td>
         </tr>`;
     }).join('');
 
-    const matchRows = (upcomingMatches || []).slice(0, 5).map(m => `
+    return `
       <tr>
-        <td style="padding:7px 0;border-bottom:1px solid #F3F4F6;">
-          <p style="margin:0;font-size:13px;font-weight:700;color:#001A4B;font-family:Arial,sans-serif;">${m.home_team} vs ${m.away_team}</p>
-          <p style="margin:2px 0 0;font-size:11px;color:#9CA3AF;font-family:Arial,sans-serif;">${fmtAR(m.start_time)} hs</p>
+        <td style="padding:0 28px 28px;">
+          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e8edf5;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:14px 20px;" bgcolor="#f9fafb">
+                <p style="margin:0;font-size:12px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.5px;font-family:Arial,sans-serif;">⚽ PRÓXIMOS PARTIDOS PARA PRONOSTICAR</p>
+              </td>
+            </tr>
+            ${rows}
+          </table>
         </td>
-      </tr>`).join('');
+      </tr>`;
+}
 
-    const pendingBanner = pendingCount > 0 ? `
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#FEF3C7" style="border-radius:12px;margin-bottom:24px;">
-        <tr><td style="padding:16px 20px;border-left:4px solid #F59E0B;border-radius:12px;">
-          <p style="margin:0;font-size:14px;font-weight:700;color:#92400E;font-family:Arial,sans-serif;">
-            ⚠️ Tenés ${pendingCount} partido${pendingCount > 1 ? 's' : ''} sin pronosticar esta semana
-          </p>
-          <p style="margin:6px 0 0;font-size:12px;color:#B45309;font-family:Arial,sans-serif;">
-            No pierdas puntos — apostá antes que cierren las apuestas.
-          </p>
-        </td></tr>
-      </table>` : '';
-
-    const rankingSection = hasRanking ? `
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
-        <tr><td style="background:linear-gradient(135deg,#001A4B 0%,#0042A5 100%);border-radius:14px;padding:24px;text-align:center;">
-          <p style="margin:0 0 4px;font-size:12px;color:#93C5FD;font-family:Arial,sans-serif;letter-spacing:2px;text-transform:uppercase;">Tu posición actual</p>
-          <p style="margin:0;font-size:48px;font-weight:900;color:#FFCC00;font-family:Arial,sans-serif;line-height:1.1;">${positionEmoji} #${rankingPos}</p>
-          <p style="margin:6px 0 0;font-size:20px;font-weight:900;color:#FFFFFF;font-family:Arial,sans-serif;">${puntos} puntos</p>
-        </td></tr>
-      </table>` : `
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#EFF6FF" style="border-radius:14px;margin-bottom:28px;">
-        <tr><td style="padding:20px 24px;text-align:center;">
-          <p style="margin:0 0 6px;font-size:28px;">⚽</p>
-          <p style="margin:0;font-size:15px;font-weight:700;color:#0042A5;font-family:Arial,sans-serif;">El ranking aún no empezó</p>
-          <p style="margin:6px 0 0;font-size:13px;color:#6B7280;font-family:Arial,sans-serif;">Apostá en los primeros partidos para aparecer en el podio.</p>
-        </td></tr>
-      </table>`;
-
-    const top3Section = top3 && top3.length > 0 && top3[0].puntos_totales > 0 ? `
-      <p style="margin:0 0 10px;font-size:15px;font-weight:700;color:#001A4B;font-family:Arial,sans-serif;">🏆 Podio actual</p>
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#F9FAFB" style="border-radius:12px;padding:4px 0;margin-bottom:28px;">
-        <tr><td style="padding:4px 20px;">
-          <table width="100%" cellpadding="0" cellspacing="0" border="0">${top3Rows}</table>
-        </td></tr>
-      </table>` : '';
-
-    const matchesSection = matchRows ? `
-      <p style="margin:0 0 10px;font-size:15px;font-weight:700;color:#001A4B;font-family:Arial,sans-serif;">📅 Próximos partidos</p>
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#F9FAFB" style="border-radius:12px;margin-bottom:24px;">
-        <tr><td style="padding:4px 20px;">
-          <table width="100%" cellpadding="0" cellspacing="0" border="0">${matchRows}</table>
-        </td></tr>
-      </table>` : '';
+const sendWeeklyEmail = async (email, {
+    userName, weekDate, userPosition, totalPlayers,
+    userPoints, bestRound, bestRoundPoints,
+    tightMatch, upcomingMatches, appUrl, unsubscribeUrl,
+}) => {
+    const tightMatchHtml = buildTightMatchSection(tightMatch);
+    const upcomingHtml = buildUpcomingSection(upcomingMatches, appUrl);
 
     const html = `<!DOCTYPE html>
 <html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#001A4B;font-family:Arial,Helvetica,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#001A4B">
-  <tr><td align="center" style="padding:40px 20px;">
-    <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resumen semanal - PRODE Caballito</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f6fb;font-family:Arial,Helvetica,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f4f6fb">
+  <tr>
+    <td align="center" style="padding:24px 16px;">
+      <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.07);">
 
-      <!-- Header -->
-      <tr><td align="center" style="padding-bottom:28px;">
-        <p style="margin:0;font-size:38px;line-height:1;">⚽</p>
-        <h1 style="color:#ffffff;margin:10px 0 0;font-size:26px;font-weight:800;font-family:Arial,sans-serif;">PRODE Caballito</h1>
-        <p style="color:#FFDF00;margin:6px 0 0;font-size:13px;font-weight:600;font-family:Arial,sans-serif;letter-spacing:2px;text-transform:uppercase;">Resumen Semanal</p>
-      </td></tr>
-
-      <!-- Main Card -->
-      <tr><td style="background-color:#ffffff;border-radius:20px;overflow:hidden;">
-
-        <!-- Yellow banner -->
-        <table width="100%" cellpadding="0" cellspacing="0" border="0">
-          <tr><td bgcolor="#FFCC00" align="center" style="padding:28px 30px;border-radius:20px 20px 0 0;">
-            <h2 style="color:#001A4B;margin:0;font-size:22px;font-weight:800;font-family:Arial,sans-serif;">¡Hola, ${userName}! 👋</h2>
-            <p style="color:#0042A5;margin:8px 0 0;font-size:14px;font-family:Arial,sans-serif;">Acá está tu resumen del Mundial 2026</p>
-          </td></tr>
-        </table>
-
-        <!-- Body -->
-        <table width="100%" cellpadding="0" cellspacing="0" border="0">
-          <tr><td style="padding:32px 30px;">
-            ${rankingSection}
-            ${top3Section}
-            ${matchesSection}
-            ${pendingBanner}
-            <!-- CTA -->
-            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
-              <tr><td align="center">
-                <a href="https://prodecaballito.com/apuestas"
-                   style="display:inline-block;background-color:#0042A5;color:#ffffff;text-decoration:none;padding:16px 40px;border-radius:50px;font-size:17px;font-weight:700;font-family:Arial,sans-serif;">
-                  ⚽ Ver partidos y apostar →
-                </a>
-              </td></tr>
+        <!-- HEADER -->
+        <tr>
+          <td style="padding:20px 28px;border-bottom:1px solid #f0f4fb;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td>
+                  <p style="margin:0;font-size:18px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;">⚽ PRODE Caballito</p>
+                </td>
+                <td align="right">
+                  <p style="margin:0;font-size:11px;color:#9ca3af;font-family:Arial,sans-serif;text-align:right;">Resumen semanal<br><strong style="color:#6b7280;">${weekDate}</strong></p>
+                </td>
+              </tr>
             </table>
-            <p style="color:#9CA3AF;font-size:12px;text-align:center;margin:0;font-family:Arial,sans-serif;">
-              Con cariño, el equipo de <strong>PRODE Caballito</strong> 💙
+          </td>
+        </tr>
+
+        <!-- HERO -->
+        <tr>
+          <td bgcolor="#0a1628" style="padding:48px 28px;text-align:center;background:linear-gradient(160deg,#001A4B 0%,#0d2b5e 60%,#162f4a 100%);">
+            <p style="margin:0 0 20px;font-size:48px;line-height:1;">⚽</p>
+            <h1 style="margin:0;font-size:30px;font-weight:900;color:#ffffff;font-family:Arial,sans-serif;line-height:1.2;text-transform:uppercase;">¡ARRANCA UNA<br>NUEVA SEMANA</h1>
+            <h1 style="margin:6px 0 20px;font-size:30px;font-weight:900;color:#FFCC00;font-family:Arial,sans-serif;line-height:1.2;text-transform:uppercase;">DE MUNDIAL!</h1>
+            <p style="margin:0;font-size:14px;color:rgba(255,255,255,0.75);font-family:Arial,sans-serif;">Así viene tu prode y lo que se viene esta semana.</p>
+          </td>
+        </tr>
+
+        <!-- STATS -->
+        <tr>
+          <td style="padding:28px;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e8edf5;border-radius:12px;overflow:hidden;">
+              <tr>
+                <td width="33%" align="center" style="padding:20px 8px;border-right:1px solid #e8edf5;">
+                  <p style="margin:0;font-size:24px;line-height:1;">🏆</p>
+                  <p style="margin:8px 0 2px;font-size:26px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;">${userPosition}°</p>
+                  <p style="margin:0;font-size:10px;color:#9ca3af;font-family:Arial,sans-serif;line-height:1.4;">Tu posición<br>de ${totalPlayers} jugadores</p>
+                </td>
+                <td width="33%" align="center" style="padding:20px 8px;border-right:1px solid #e8edf5;">
+                  <p style="margin:0;font-size:24px;line-height:1;">🎯</p>
+                  <p style="margin:8px 0 2px;font-size:26px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;">${userPoints}</p>
+                  <p style="margin:0;font-size:10px;color:#9ca3af;font-family:Arial,sans-serif;line-height:1.4;">Tus puntos</p>
+                </td>
+                <td width="33%" align="center" style="padding:20px 8px;">
+                  <p style="margin:0;font-size:24px;line-height:1;">📅</p>
+                  <p style="margin:8px 0 2px;font-size:18px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;">${bestRound}</p>
+                  <p style="margin:0;font-size:10px;color:#9ca3af;font-family:Arial,sans-serif;line-height:1.4;">Tu mejor fecha<br>(${bestRoundPoints} pts)</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        ${tightMatchHtml}
+
+        ${upcomingHtml}
+
+        <!-- CTA PRINCIPAL -->
+        <tr>
+          <td style="padding:0 28px 28px;">
+            <a href="${appUrl}" style="display:block;background-color:#001A4B;color:#ffffff;text-decoration:none;padding:18px 32px;border-radius:10px;font-size:16px;font-weight:700;font-family:Arial,sans-serif;text-align:center;">
+              Ver todos los partidos y apostar →
+            </a>
+          </td>
+        </tr>
+
+        <!-- FOOTER -->
+        <tr>
+          <td align="center" style="padding:24px 28px;border-top:1px solid #f0f4fb;" bgcolor="#f9fafb">
+            <p style="margin:0;font-size:13px;color:#374151;font-family:Arial,sans-serif;line-height:1.6;">
+              💙 Gracias por jugar y ser parte de <strong>PRODE Caballito</strong>.<br>¡A seguir sumando puntos! 💪
             </p>
-          </td></tr>
-        </table>
-      </td></tr>
+            <p style="margin:14px 0 0;font-size:11px;color:#9ca3af;font-family:Arial,sans-serif;">
+              <a href="${unsubscribeUrl}" style="color:#9ca3af;text-decoration:underline;">Cancelar suscripción</a>
+              &nbsp;&middot;&nbsp;
+              <a href="https://prodecaballito.com" style="color:#9ca3af;text-decoration:none;">prodecaballito.com</a>
+            </p>
+          </td>
+        </tr>
 
-      <!-- Footer -->
-      <tr><td align="center" style="padding-top:24px;">
-        <p style="color:rgba(255,255,255,0.5);font-size:12px;margin:0 0 6px;font-family:Arial,sans-serif;">© 2026 PRODE Caballito · Mundial 2026</p>
-        <a href="https://prodecaballito.com" style="color:rgba(255,255,255,0.7);font-size:12px;text-decoration:none;font-family:Arial,sans-serif;">www.prodecaballito.com</a>
-      </td></tr>
-
-    </table>
-  </td></tr>
+      </table>
+    </td>
+  </tr>
 </table>
-</body></html>`;
+</body>
+</html>`;
 
-    await sendEmail({
-        to: userEmail,
-        subject: hasRanking
-            ? `⚽ PRODE Caballito — Vas #${rankingPos} con ${puntos}pts · Resumen semanal`
-            : `⚽ PRODE Caballito — Resumen semanal · Mundial 2026`,
+    await (0, exports.sendEmail)({
+        to: email,
+        subject: `⚽ Tu resumen semanal — PRODE Caballito`,
         html,
     });
 };
-exports.sendWeeklyDigestEmail = sendWeeklyDigestEmail;
+exports.sendWeeklyEmail = sendWeeklyEmail;
 //# sourceMappingURL=email.js.map

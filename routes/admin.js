@@ -2,137 +2,10 @@
 const { Router } = require("express");
 const { authMiddleware, requireAdmin } = require("../middleware/auth");
 const { sendWhatsApp } = require("../services/whatsapp");
-const { sendWeeklyDigestEmail } = require("../services/email");
 const { db } = require("../db/connection");
+const { sendWeeklyEmail } = require("../services/email");
 
 const router = Router();
-
-async function buildWeeklyDigestData() {
-    // Top 3 ranking
-    const top3Res = await db.query(`
-        SELECT u.nombre as user_name, r.puntos_totales, r.position
-        FROM ranking r
-        JOIN planillas p ON r.planilla_id = p.id
-        JOIN users u ON p.user_id = u.id
-        WHERE p.precio_pagado = true
-        ORDER BY r.position ASC NULLS LAST, r.puntos_totales DESC
-        LIMIT 3
-    `);
-    const top3 = top3Res.rows;
-
-    // Upcoming matches next 7 days
-    const matchesRes = await db.query(`
-        SELECT home_team, away_team, start_time
-        FROM matches
-        WHERE estado = 'scheduled'
-          AND start_time >= NOW()
-          AND start_time <= NOW() + INTERVAL '7 days'
-        ORDER BY start_time ASC
-        LIMIT 5
-    `);
-    const upcomingMatches = matchesRes.rows;
-
-    return { top3, upcomingMatches };
-}
-
-router.post('/weekly-digest', authMiddleware, requireAdmin, async (req, res) => {
-    try {
-        const { test_email } = req.body;
-        const { top3, upcomingMatches } = await buildWeeklyDigestData();
-
-        if (test_email) {
-            // Modo test: enviar solo al email indicado con datos del admin
-            const userRes = await db.query(
-                `SELECT u.id, u.nombre, u.email,
-                    r.puntos_totales, r.position
-                 FROM users u
-                 LEFT JOIN planillas p ON p.user_id = u.id AND p.precio_pagado = true
-                 LEFT JOIN ranking r ON r.planilla_id = p.id
-                 WHERE u.email = $1
-                 ORDER BY r.position ASC NULLS LAST
-                 LIMIT 1`,
-                [test_email]
-            );
-            const user = userRes.rows[0];
-            if (!user) return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
-
-            // Pending bets for this week
-            const pendingRes = await db.query(`
-                SELECT COUNT(*) as cnt
-                FROM matches m
-                LEFT JOIN planillas p ON p.user_id = $1 AND p.precio_pagado = true
-                LEFT JOIN bets b ON b.match_id = m.id AND b.planilla_id = p.id
-                WHERE m.estado = 'scheduled'
-                  AND m.start_time >= NOW()
-                  AND m.start_time <= NOW() + INTERVAL '7 days'
-                  AND b.id IS NULL
-                  AND p.id IS NOT NULL
-            `, [user.id]);
-            const pendingCount = parseInt(pendingRes.rows[0]?.cnt || 0);
-
-            await sendWeeklyDigestEmail({
-                userEmail: test_email,
-                userName: user.nombre,
-                rankingPos: user.position || null,
-                puntos: user.puntos_totales || 0,
-                upcomingMatches,
-                pendingCount,
-                top3,
-            });
-            return res.json({ success: true, sent: 1, to: test_email });
-        }
-
-        // Envío masivo: todos los usuarios activos
-        const usersRes = await db.query(`
-            SELECT DISTINCT ON (u.id)
-                u.id, u.nombre, u.email,
-                r.puntos_totales, r.position
-            FROM users u
-            JOIN planillas p ON p.user_id = u.id
-            LEFT JOIN ranking r ON r.planilla_id = p.id AND p.precio_pagado = true
-            WHERE u.email IS NOT NULL
-            ORDER BY u.id, r.position ASC NULLS LAST
-        `);
-
-        let sent = 0;
-        let failed = 0;
-        for (const user of usersRes.rows) {
-            try {
-                const pendingRes = await db.query(`
-                    SELECT COUNT(*) as cnt
-                    FROM matches m
-                    LEFT JOIN planillas p2 ON p2.user_id = $1 AND p2.precio_pagado = true
-                    LEFT JOIN bets b ON b.match_id = m.id AND b.planilla_id = p2.id
-                    WHERE m.estado = 'scheduled'
-                      AND m.start_time >= NOW()
-                      AND m.start_time <= NOW() + INTERVAL '7 days'
-                      AND b.id IS NULL
-                      AND p2.id IS NOT NULL
-                `, [user.id]);
-                const pendingCount = parseInt(pendingRes.rows[0]?.cnt || 0);
-
-                await sendWeeklyDigestEmail({
-                    userEmail: user.email,
-                    userName: user.nombre,
-                    rankingPos: user.position || null,
-                    puntos: user.puntos_totales || 0,
-                    upcomingMatches,
-                    pendingCount,
-                    top3,
-                });
-                sent++;
-            } catch (err) {
-                console.error(`[weekly-digest] error enviando a ${user.email}:`, err.message);
-                failed++;
-            }
-        }
-        res.json({ success: true, sent, failed, total: usersRes.rows.length });
-
-    } catch (error) {
-        console.error('[admin] weekly-digest error:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
 
 router.post('/test-whatsapp', authMiddleware, requireAdmin, async (req, res) => {
     try {
@@ -148,4 +21,138 @@ router.post('/test-whatsapp', authMiddleware, requireAdmin, async (req, res) => 
     }
 });
 
+// ── Weekly email batch ────────────────────────────────────────────────────────
+
+async function sendWeeklyEmailBatch(testEmail = null) {
+    const now = new Date();
+    const weekDate = now.toLocaleDateString('es-AR', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+        weekday: 'long', day: 'numeric', month: 'long',
+    });
+    const weekDateFormatted = weekDate.charAt(0).toUpperCase() + weekDate.slice(1);
+
+    // Total players in ranking (paid planillas)
+    const totalPlayersRes = await db.query(
+        `SELECT COUNT(*) as total FROM planillas WHERE precio_pagado = true`
+    );
+    const totalPlayers = parseInt(totalPlayersRes.rows[0].total) || 0;
+
+    // Most contested match of the week (min exact predictions)
+    const tightMatchRes = await db.query(`
+        SELECT m.home_team, m.away_team, m.resultado_local, m.resultado_visitante,
+            COUNT(*) FILTER (WHERE b.puntos_obtenidos >= 3) as exact_hits,
+            COUNT(b.id) as total_bets
+        FROM matches m
+        JOIN bets b ON b.match_id = m.id
+        WHERE m.estado = 'finalizado'
+            AND m.start_time >= NOW() - INTERVAL '7 days'
+        GROUP BY m.id, m.home_team, m.away_team, m.resultado_local, m.resultado_visitante
+        HAVING COUNT(b.id) > 0
+        ORDER BY COUNT(*) FILTER (WHERE b.puntos_obtenidos >= 3) ASC,
+                 COUNT(b.id) DESC
+        LIMIT 1
+    `);
+    const tightMatch = tightMatchRes.rows[0] || null;
+
+    // Upcoming matches (next 3)
+    const upcomingRes = await db.query(`
+        SELECT home_team, away_team, start_time
+        FROM matches
+        WHERE estado = 'pendiente' AND time_cutoff > NOW()
+        ORDER BY start_time ASC
+        LIMIT 3
+    `);
+    const upcomingMatches = upcomingRes.rows;
+
+    // Users with their best planilla (by points)
+    const usersParams = testEmail ? [testEmail] : [];
+    const usersFilter = testEmail ? 'AND u.email = $1' : '';
+    const usersRes = await db.query(`
+        SELECT
+            u.id as user_id, u.nombre, u.email,
+            p.id as planilla_id,
+            p.precio_pagado,
+            COALESCE(r.puntos_totales, 0) as puntos_totales
+        FROM users u
+        JOIN planillas p ON p.user_id = u.id
+        LEFT JOIN ranking r ON r.planilla_id = p.id
+        WHERE u.email_verified = true ${usersFilter}
+        ORDER BY u.id, COALESCE(r.puntos_totales, 0) DESC
+    `, usersParams);
+
+    // One row per user (best planilla)
+    const userMap = new Map();
+    for (const row of usersRes.rows) {
+        if (!userMap.has(row.user_id)) userMap.set(row.user_id, row);
+    }
+
+    const appUrl = 'https://prodecaballito.com/apuestas';
+    const unsubscribeUrl = 'https://prodecaballito.com';
+    let sent = 0, failed = 0;
+
+    for (const [, userData] of userMap) {
+        try {
+            // Position among paid planillas
+            const posRes = await db.query(`
+                SELECT COUNT(*) + 1 as position
+                FROM ranking r2
+                JOIN planillas p2 ON p2.id = r2.planilla_id
+                WHERE p2.precio_pagado = true
+                    AND r2.puntos_totales > $1
+            `, [userData.puntos_totales]);
+            const userPosition = parseInt(posRes.rows[0].position) || 1;
+
+            // Best round by points for this planilla
+            const bestRoundRes = await db.query(`
+                SELECT m.jornada, SUM(b.puntos_obtenidos) as pts
+                FROM bets b
+                JOIN matches m ON b.match_id = m.id
+                WHERE b.planilla_id = $1
+                    AND b.puntos_obtenidos IS NOT NULL
+                    AND m.jornada IS NOT NULL
+                GROUP BY m.jornada
+                ORDER BY pts DESC
+                LIMIT 1
+            `, [userData.planilla_id]);
+            const bestRound = bestRoundRes.rows[0];
+
+            await sendWeeklyEmail(userData.email, {
+                userName: userData.nombre,
+                weekDate: weekDateFormatted,
+                userPosition,
+                totalPlayers,
+                userPoints: userData.puntos_totales,
+                bestRound: bestRound ? `Fecha ${bestRound.jornada}` : '—',
+                bestRoundPoints: bestRound ? parseInt(bestRound.pts) : 0,
+                tightMatch,
+                upcomingMatches,
+                appUrl,
+                unsubscribeUrl,
+            });
+            sent++;
+        } catch (err) {
+            console.error(`[weekly-email] Error sending to ${userData.email}:`, err.message);
+            failed++;
+        }
+    }
+
+    return { sent, failed, total: userMap.size };
+}
+
+// POST /api/admin/weekly-email
+// Body opcional: { test_email: "..." } → envía solo a ese email (preview)
+router.post('/weekly-email', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const testEmail = req.body.test_email || null;
+        console.log(`[weekly-email] Starting batch${testEmail ? ` (test: ${testEmail})` : ''}`);
+        const result = await sendWeeklyEmailBatch(testEmail);
+        console.log(`[weekly-email] Done: sent=${result.sent} failed=${result.failed} total=${result.total}`);
+        res.json({ success: true, data: result });
+    } catch (error) {
+        console.error('[weekly-email] Batch error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 module.exports = router;
+module.exports.sendWeeklyEmailBatch = sendWeeklyEmailBatch;
