@@ -192,12 +192,28 @@ router.post('/winner-image', authMiddleware, requireAdmin, async (req, res) => {
     try {
         const { image_url, matchday_label } = req.body;
         if (!image_url) return res.status(400).json({ success: false, error: 'image_url requerida' });
-        const value = JSON.stringify({ image_url, matchday_label, updated_at: new Date().toISOString() });
+        const entry = { image_url, matchday_label, updated_at: new Date().toISOString() };
+
+        // Upsert single latest winner
         await db.query(`
             INSERT INTO config (key, value, updated_at, updated_by)
             VALUES ($1, $2, NOW(), $3)
             ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW(), updated_by = $3
-        `, ['ganador_fecha', value, req.user.userId]);
+        `, ['ganador_fecha', JSON.stringify(entry), req.user.userId]);
+
+        // Append to winners array
+        const existingRes = await db.query(`SELECT value FROM config WHERE key = 'ganadores_fechas'`);
+        let winners = [];
+        if (existingRes.rows.length > 0) {
+            try { winners = JSON.parse(existingRes.rows[0].value) } catch {}
+        }
+        winners.push(entry);
+        await db.query(`
+            INSERT INTO config (key, value, updated_at, updated_by)
+            VALUES ('ganadores_fechas', $1, NOW(), $2)
+            ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW(), updated_by = $2
+        `, [JSON.stringify(winners), req.user.userId]);
+
         res.json({ success: true });
     } catch (error) {
         console.error('[winner-image] Error:', error);

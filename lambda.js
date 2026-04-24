@@ -94,18 +94,30 @@ const handler = async (event, context) => {
 
     // Direct config upsert for winner image (called by n8n or manually)
     if (event.source === 'prode.set-winner') {
-        const value = JSON.stringify({
+        const entry = {
             image_url: event.imageUrl,
             matchday_label: event.matchdayLabel || 'Ganador de la Fecha',
             updated_at: new Date().toISOString(),
-        });
+        };
+        // Upsert single latest winner
         await db.query(
-            `INSERT INTO config (key, value, updated_at)
-             VALUES ('ganador_fecha', $1, NOW())
+            `INSERT INTO config (key, value, updated_at) VALUES ('ganador_fecha', $1, NOW())
              ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
-            [value]
+            [JSON.stringify(entry)]
         );
-        console.log('[prode.set-winner] Winner image set:', event.matchdayLabel);
+        // Append to winners array
+        const existingRes = await db.query(`SELECT value FROM config WHERE key = 'ganadores_fechas'`);
+        let winners = [];
+        if (existingRes.rows.length > 0) {
+            try { winners = JSON.parse(existingRes.rows[0].value) } catch {}
+        }
+        winners.push(entry);
+        await db.query(
+            `INSERT INTO config (key, value, updated_at) VALUES ('ganadores_fechas', $1, NOW())
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+            [JSON.stringify(winners)]
+        );
+        console.log('[prode.set-winner] Winner image set:', event.matchdayLabel, '| total:', winners.length);
         return { statusCode: 200, body: JSON.stringify({ success: true }) };
     }
 
