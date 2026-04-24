@@ -62,10 +62,12 @@ jobs:
       # ── TEMP: set test winner — revert after testing ──────────────────────────
       - name: Set test winner image (TEMP)
         run: |
+          cat > /tmp/winner_payload.json << 'PAYLOAD'
+          {"source":"prode.set-winner","imageUrl":"https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=480&h=480&fit=crop&q=90","matchdayLabel":"Fecha de Prueba - cfdelrio"}
+          PAYLOAD
           aws lambda invoke \
             --function-name prode-api \
-            --payload "$(echo '{"source":"prode.set-winner","imageUrl":"https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=480&h=480&fit=crop&q=90","matchdayLabel":"🏆 Fecha de Prueba — cfdelrio"}' | base64)" \
-            --cli-binary-format raw-in-base64-out \
+            --payload file:///tmp/winner_payload.json \
             --region us-east-1 winner_output.json
           cat winner_output.json
         env:
