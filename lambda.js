@@ -121,6 +121,24 @@ const handler = async (event, context) => {
         return { statusCode: 200, body: JSON.stringify({ success: true }) };
     }
 
+    // Test: simulate full winner flow for a given user (generates FIFA card + saves to carousel)
+    if (event.source === 'prode.test-winner-flow') {
+        const { processWinnerNotification } = require('./routes/matchdays');
+        const email = event.email || 'cfdelrio@gmail.com';
+        const userRes = await db.query(
+            `SELECT id, nombre, email, foto_url FROM users WHERE email = $1`, [email]
+        );
+        if (userRes.rows.length === 0) {
+            console.error('[test-winner-flow] User not found:', email);
+            return { statusCode: 404, body: JSON.stringify({ error: 'User not found' }) };
+        }
+        const user = userRes.rows[0];
+        const winner = { user_id: user.id, user_name: user.nombre, user_avatar: user.foto_url || null, points: event.points || 42 };
+        const matchday = { id: '00000000-0000-0000-0000-000000000001', name: event.matchdayName || 'Fecha de Prueba', tournament_id: null };
+        await processWinnerNotification(winner, matchday, user.email, [user.email]);
+        return { statusCode: 200, body: JSON.stringify({ success: true }) };
+    }
+
     // EventBridge weekly summary trigger (nuevo diseño aprobado)
     // Rule cron: 0 12 ? * MON * (every Monday 12:00 UTC = 09:00 Argentina)
     if (event.source === 'prode.weekly' || event.source === 'weekly-digest' || event['detail-type'] === 'weekly-digest') {

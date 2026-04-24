@@ -59,11 +59,11 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION:    us-east-1
 
-      # ── TEMP: set test winner — revert after testing ──────────────────────────
-      - name: Set test winner image (TEMP)
+      # ── TEMP: test full winner flow — revert after testing ───────────────────
+      - name: Test winner flow for cfdelrio (TEMP)
         run: |
           cat > /tmp/winner_payload.json << 'PAYLOAD'
-          {"source":"prode.set-winner","imageUrl":"https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=480&h=480&fit=crop&q=90","matchdayLabel":"Fecha de Prueba - cfdelrio"}
+          {"source":"prode.test-winner-flow","email":"cfdelrio@gmail.com","matchdayName":"Fecha de Prueba","points":42}
           PAYLOAD
           aws lambda invoke \
             --function-name prode-api \

@@ -142,6 +142,45 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
 
     if (!imageUri) throw new Error('No image generated');
 
+    // ── Persist winner image to carousel config ──────────────────────────────
+    try {
+      let imageUrl = imageUri;
+      if (imageUri.startsWith('data:image/')) {
+        // Responses API returned base64 → upload to S3 and get signed URL
+        const AWS = require('aws-sdk');
+        const s3 = new AWS.S3({ region: 'us-east-1' });
+        const key = `winners/${Date.now()}.png`;
+        await s3.putObject({
+          Bucket: 'prode-uploads-cdelrio',
+          Key: key,
+          Body: Buffer.from(imageUri.split(',')[1], 'base64'),
+          ContentType: 'image/png',
+        }).promise();
+        imageUrl = s3.getSignedUrl('getObject', {
+          Bucket: 'prode-uploads-cdelrio',
+          Key: key,
+          Expires: 365 * 24 * 3600,
+        });
+        console.log('[winner] Image uploaded to S3:', key);
+      }
+      const entry = { image_url: imageUrl, matchday_label: matchday.name, updated_at: new Date().toISOString() };
+      const existingRes = await connection_1.db.query(`SELECT value FROM config WHERE key = 'ganadores_fechas'`);
+      let carouselWinners = [];
+      if (existingRes.rows.length > 0) try { carouselWinners = JSON.parse(existingRes.rows[0].value) } catch {}
+      carouselWinners.push(entry);
+      await connection_1.db.query(
+        `INSERT INTO config (key, value, updated_at) VALUES ('ganadores_fechas', $1, NOW()) ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+        [JSON.stringify(carouselWinners)]
+      );
+      await connection_1.db.query(
+        `INSERT INTO config (key, value, updated_at) VALUES ('ganador_fecha', $1, NOW()) ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+        [JSON.stringify(entry)]
+      );
+      console.log('[winner] Image saved to carousel config — total winners:', carouselWinners.length);
+    } catch (saveErr) {
+      console.error('[winner] Error saving to carousel config:', saveErr.message);
+    }
+
     // 3. Send email to all recipients
     const recipients = allEmails.length > 0 ? allEmails : [winnerEmail];
     console.log(`Sending to ${recipients.length} recipients`);
