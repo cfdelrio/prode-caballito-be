@@ -355,7 +355,6 @@ async function actualizarRanking() {
     FROM planillas p
     LEFT JOIN scores s ON p.id = s.planilla_id
     LEFT JOIN matches m ON s.match_id = m.id AND m.estado = 'finished'
-    WHERE p.precio_pagado = true
     GROUP BY p.id
     ON CONFLICT (planilla_id) DO UPDATE SET
       puntos_totales = EXCLUDED.puntos_totales,
