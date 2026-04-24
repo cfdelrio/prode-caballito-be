@@ -92,6 +92,23 @@ const handler = async (event, context) => {
         return { statusCode: 200 };
     }
 
+    // Direct config upsert for winner image (called by n8n or manually)
+    if (event.source === 'prode.set-winner') {
+        const value = JSON.stringify({
+            image_url: event.imageUrl,
+            matchday_label: event.matchdayLabel || 'Ganador de la Fecha',
+            updated_at: new Date().toISOString(),
+        });
+        await db.query(
+            `INSERT INTO config (key, value, updated_at)
+             VALUES ('ganador_fecha', $1, NOW())
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+            [value]
+        );
+        console.log('[prode.set-winner] Winner image set:', event.matchdayLabel);
+        return { statusCode: 200, body: JSON.stringify({ success: true }) };
+    }
+
     // EventBridge weekly summary trigger (nuevo diseño aprobado)
     // Rule cron: 0 12 ? * MON * (every Monday 12:00 UTC = 09:00 Argentina)
     if (event.source === 'prode.weekly' || event.source === 'weekly-digest' || event['detail-type'] === 'weekly-digest') {
