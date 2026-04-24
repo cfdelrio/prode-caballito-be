@@ -96,7 +96,8 @@ const handler = async (event, context) => {
     // Rule cron: 0 12 ? * MON * (every Monday 12:00 UTC = 09:00 Argentina)
     if (event.source === 'prode.weekly' || event.source === 'weekly-digest' || event['detail-type'] === 'weekly-digest') {
         const { sendWeeklyEmailBatch } = require('./routes/admin');
-        const result = await sendWeeklyEmailBatch();
+        const testEmail = event.testEmail || null;
+        const result = await sendWeeklyEmailBatch(testEmail);
         console.log('[prode.weekly] Weekly email batch result:', result);
         return { statusCode: 200, body: JSON.stringify(result) };
     }
