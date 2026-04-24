@@ -289,18 +289,17 @@ router.delete('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req,
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
-// Endpoint optimizado para la matriz - carga todas las apuestas de planillas pagadas en 1 query
+// Endpoint optimizado para la matriz - carga todas las apuestas de todas las planillas en 1 query
 router.get('/all-for-matrix', async (req, res) => {
     try {
         const result = await connection_1.db.query(`
-      SELECT 
+      SELECT
         b.planilla_id,
         b.match_id,
         b.goles_local,
         b.goles_visitante
       FROM bets b
       JOIN planillas p ON b.planilla_id = p.id
-      WHERE p.precio_pagado = true
       ORDER BY b.planilla_id, b.match_id
     `);
         // Agrupar por planilla_id
