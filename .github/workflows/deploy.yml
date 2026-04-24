@@ -59,19 +59,3 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION:    us-east-1
 
-      # ── TEMP: test full winner flow — revert after testing ───────────────────
-      - name: Test winner flow for cfdelrio (TEMP)
-        run: |
-          cat > /tmp/winner_payload.json << 'PAYLOAD'
-          {"source":"prode.test-winner-flow","email":"cfdelrio@gmail.com","matchdayName":"Fecha de Prueba","points":42}
-          PAYLOAD
-          aws lambda invoke \
-            --function-name prode-api \
-            --payload file:///tmp/winner_payload.json \
-            --cli-binary-format raw-in-base64-out \
-            --region us-east-1 winner_output.json
-          cat winner_output.json
-        env:
-          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION:    us-east-1
