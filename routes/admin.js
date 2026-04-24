@@ -38,18 +38,19 @@ async function sendWeeklyEmailBatch(testEmail = null) {
     const totalPlayers = parseInt(totalPlayersRes.rows[0].total) || 0;
 
     // Most contested match of the week (min exact predictions)
+    // Points live in the `scores` table, not in `bets`
     const tightMatchRes = await db.query(`
         SELECT m.home_team, m.away_team, m.resultado_local, m.resultado_visitante,
-            COUNT(*) FILTER (WHERE b.puntos_obtenidos >= 3) as exact_hits,
-            COUNT(b.id) as total_bets
+            COUNT(*) FILTER (WHERE s.puntos_obtenidos >= 3) as exact_hits,
+            COUNT(s.planilla_id) as total_bets
         FROM matches m
-        JOIN bets b ON b.match_id = m.id
+        JOIN scores s ON s.match_id = m.id
         WHERE m.estado = 'finalizado'
             AND m.start_time >= NOW() - INTERVAL '7 days'
         GROUP BY m.id, m.home_team, m.away_team, m.resultado_local, m.resultado_visitante
-        HAVING COUNT(b.id) > 0
-        ORDER BY COUNT(*) FILTER (WHERE b.puntos_obtenidos >= 3) ASC,
-                 COUNT(b.id) DESC
+        HAVING COUNT(s.planilla_id) > 0
+        ORDER BY COUNT(*) FILTER (WHERE s.puntos_obtenidos >= 3) ASC,
+                 COUNT(s.planilla_id) DESC
         LIMIT 1
     `);
     const tightMatch = tightMatchRes.rows[0] || null;
@@ -102,13 +103,14 @@ async function sendWeeklyEmailBatch(testEmail = null) {
             `, [userData.puntos_totales]);
             const userPosition = parseInt(posRes.rows[0].position) || 1;
 
-            // Best round by points for this planilla
+            // Best round by points for this planilla (scores table has the points)
             const bestRoundRes = await db.query(`
-                SELECT m.jornada, SUM(b.puntos_obtenidos) as pts
+                SELECT m.jornada, SUM(s.puntos_obtenidos) as pts
                 FROM bets b
                 JOIN matches m ON b.match_id = m.id
+                JOIN scores s ON s.planilla_id = b.planilla_id AND s.match_id = b.match_id
                 WHERE b.planilla_id = $1
-                    AND b.puntos_obtenidos IS NOT NULL
+                    AND s.puntos_obtenidos IS NOT NULL
                     AND m.jornada IS NOT NULL
                 GROUP BY m.jornada
                 ORDER BY pts DESC
