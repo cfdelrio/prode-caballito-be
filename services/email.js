@@ -579,37 +579,42 @@ function buildTightMatchSection(tightMatch) {
     const hitsText = hits === 0
         ? '¡Nadie acertó el resultado exacto!'
         : hits === 1
-            ? '¡Solo 1 jugador acertó el resultado exacto!'
-            : `¡Solo ${hits} jugadores acertaron el resultado exacto!`;
+            ? 'Solo 1 jugador acertó el resultado exacto'
+            : `Solo ${hits} jugadores acertaron el resultado exacto`;
 
     return `
       <tr>
         <td style="padding:0 24px 24px;">
           <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
             <tr>
-              <td bgcolor="#001A4B" style="padding:12px 18px;">
-                <p style="margin:0;font-size:11px;font-weight:700;color:#FFCC00;text-transform:uppercase;letter-spacing:1px;font-family:Arial,sans-serif;">🔥 Partido más reñido de la semana</p>
+              <td style="padding:12px 18px;border-bottom:1px solid #f3f4f6;">
+                <p style="margin:0;font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:1px;font-family:Arial,sans-serif;">🔥 Partido más reñido de la semana</p>
               </td>
             </tr>
             <tr>
-              <td bgcolor="#ffffff" align="center" style="padding:24px 20px;">
-                <table cellpadding="0" cellspacing="0" border="0">
+              <td bgcolor="#ffffff" style="padding:24px 16px;">
+                <table width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
-                    <td align="center" style="padding:0 16px;">
-                      <p style="margin:0;font-size:36px;line-height:1;">${homeFlag}</p>
-                      <p style="margin:8px 0 0;font-size:12px;color:#374151;font-family:Arial,sans-serif;font-weight:700;">${tightMatch.home_team}</p>
+                    <td width="33%" align="center">
+                      <p style="margin:0;font-size:40px;line-height:1;">${homeFlag}</p>
+                      <p style="margin:6px 0 0;font-size:12px;font-weight:700;color:#374151;font-family:Arial,sans-serif;">${tightMatch.home_team}</p>
                     </td>
-                    <td align="center" style="padding:0 14px;">
-                      <p style="margin:0;font-size:40px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;letter-spacing:3px;">${tightMatch.resultado_local} - ${tightMatch.resultado_visitante}</p>
-                      <p style="margin:6px 0 0;font-size:11px;color:#9ca3af;font-family:Arial,sans-serif;">resultado final</p>
+                    <td width="34%" align="center">
+                      <p style="margin:0;font-size:44px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;letter-spacing:2px;line-height:1;">${tightMatch.resultado_local} - ${tightMatch.resultado_visitante}</p>
                     </td>
-                    <td align="center" style="padding:0 16px;">
-                      <p style="margin:0;font-size:36px;line-height:1;">${awayFlag}</p>
-                      <p style="margin:8px 0 0;font-size:12px;color:#374151;font-family:Arial,sans-serif;font-weight:700;">${tightMatch.away_team}</p>
+                    <td width="33%" align="center">
+                      <p style="margin:0;font-size:40px;line-height:1;">${awayFlag}</p>
+                      <p style="margin:6px 0 0;font-size:12px;font-weight:700;color:#374151;font-family:Arial,sans-serif;">${tightMatch.away_team}</p>
                     </td>
                   </tr>
                 </table>
-                <p style="margin:18px 0 0;font-size:13px;color:#DC2626;font-weight:700;font-family:Arial,sans-serif;">${hitsText}</p>
+                <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;">
+                  <tr>
+                    <td align="center" bgcolor="#eff6ff" style="padding:10px 16px;border-radius:8px;">
+                      <p style="margin:0;font-size:13px;font-weight:700;color:#2563eb;font-family:Arial,sans-serif;">${hitsText}</p>
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
           </table>
@@ -619,7 +624,7 @@ function buildTightMatchSection(tightMatch) {
 
 function buildUpcomingSection(upcomingMatches, appUrl) {
     if (!upcomingMatches || upcomingMatches.length === 0) return '';
-    const rows = upcomingMatches.map(m => {
+    const cards = upcomingMatches.map((m, i) => {
         const homeFlag = getTeamFlag(m.home_team);
         const awayFlag = getTeamFlag(m.away_team);
         const d = new Date(m.start_time);
@@ -631,20 +636,34 @@ function buildUpcomingSection(upcomingMatches, appUrl) {
             timeZone: 'America/Argentina/Buenos_Aires',
             hour: '2-digit', minute: '2-digit',
         });
+        const badgeHtml = m.badge ? `
+              <tr>
+                <td bgcolor="#FEF3C7" style="padding:5px 16px;">
+                  <p style="margin:0;font-size:11px;font-weight:700;color:#92400E;font-family:Arial,sans-serif;">${m.badge}</p>
+                </td>
+              </tr>` : '';
+        const bottomPad = i < upcomingMatches.length - 1 ? 'padding:0 0 10px;' : 'padding:0;';
         return `
         <tr>
-          <td bgcolor="#ffffff" style="padding:14px 18px;border-bottom:1px solid #f3f4f6;">
-            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <td style="${bottomPad}">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+              ${badgeHtml}
               <tr>
-                <td style="font-size:22px;line-height:1;width:28px;">${homeFlag}</td>
-                <td style="padding:0 10px;font-family:Arial,sans-serif;">
-                  <p style="margin:0;font-size:13px;font-weight:700;color:#111827;">${m.home_team} vs ${m.away_team}</p>
-                  <p style="margin:3px 0 0;font-size:11px;color:#6b7280;">${dateStr} &middot; ${timeStr} hs</p>
+                <td bgcolor="#FFF8F0" style="padding:16px 16px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td style="font-size:22px;line-height:1;width:28px;">${homeFlag}</td>
+                      <td style="padding:0 10px;font-family:Arial,sans-serif;">
+                        <p style="margin:0;font-size:13px;font-weight:700;color:#111827;">${m.home_team} vs ${m.away_team}</p>
+                        <p style="margin:3px 0 0;font-size:11px;color:#6b7280;">${dateStr} &middot; ${timeStr} hs</p>
+                      </td>
+                      <td align="right" style="width:90px;">
+                        <a href="${appUrl}" style="display:inline-block;background-color:#FFCC00;color:#001A4B;font-size:13px;font-weight:900;text-decoration:none;padding:10px 16px;border-radius:20px;font-family:Arial,sans-serif;white-space:nowrap;">Apostar →</a>
+                      </td>
+                      <td style="font-size:22px;line-height:1;width:28px;text-align:right;padding-left:8px;">${awayFlag}</td>
+                    </tr>
+                  </table>
                 </td>
-                <td align="right" style="width:80px;">
-                  <a href="${appUrl}" style="display:inline-block;background-color:#FFCC00;color:#001A4B;font-size:12px;font-weight:900;text-decoration:none;padding:8px 14px;border-radius:20px;font-family:Arial,sans-serif;white-space:nowrap;">Apostar →</a>
-                </td>
-                <td style="font-size:22px;line-height:1;width:28px;text-align:right;padding-left:8px;">${awayFlag}</td>
               </tr>
             </table>
           </td>
@@ -654,13 +673,9 @@ function buildUpcomingSection(upcomingMatches, appUrl) {
     return `
       <tr>
         <td style="padding:0 24px 24px;">
-          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
-            <tr>
-              <td bgcolor="#001A4B" style="padding:12px 18px;">
-                <p style="margin:0;font-size:11px;font-weight:700;color:#FFCC00;text-transform:uppercase;letter-spacing:1px;font-family:Arial,sans-serif;">⚽ Próximos partidos para apostar</p>
-              </td>
-            </tr>
-            ${rows}
+          <p style="margin:0 0 12px;font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:1px;font-family:Arial,sans-serif;">⚽ Próximos partidos para pronosticar</p>
+          <table width="100%" cellpadding="0" cellspacing="0" border="0">
+            ${cards}
           </table>
         </td>
       </tr>`;
@@ -669,17 +684,32 @@ function buildUpcomingSection(upcomingMatches, appUrl) {
 const sendWeeklyEmail = async (email, {
     userName, weekDate, userPosition, totalPlayers,
     userPoints, bestRound, bestRoundPoints,
+    diferenciaPuntos = 0, pendingBets = 0,
     tightMatch, upcomingMatches, appUrl, unsubscribeUrl,
 }) => {
     const tightMatchHtml = buildTightMatchSection(tightMatch);
     const upcomingHtml = buildUpcomingSection(upcomingMatches, appUrl);
+
+    const pendingBadge = pendingBets > 0
+        ? `<table cellpadding="0" cellspacing="0" border="0" style="margin-top:20px;">
+            <tr>
+              <td bgcolor="#FFCC00" style="padding:9px 18px;border-radius:20px;">
+                <p style="margin:0;font-size:13px;font-weight:700;color:#001A4B;font-family:Arial,sans-serif;">⚡ Tenés ${pendingBets} pronóstico${pendingBets !== 1 ? 's' : ''} pendiente${pendingBets !== 1 ? 's' : ''} para esta fecha</p>
+              </td>
+            </tr>
+          </table>`
+        : '';
+
+    const diferencia = userPosition <= 5
+        ? `<p style="margin:3px 0 0;font-size:14px;color:#059669;font-family:Arial,sans-serif;font-weight:700;">🏆 ¡Estás en el top 5!</p>`
+        : `<p style="margin:3px 0 0;font-size:14px;color:#6b7280;font-family:Arial,sans-serif;">Estás a <strong style="color:#DC2626;">${diferenciaPuntos} pts</strong> del top 5.</p>`;
 
     const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Resumen semanal - PRODE Caballito</title>
+  <title>Tu resumen semanal — PRODE Caballito</title>
 </head>
 <body style="margin:0;padding:0;background-color:#eef2f7;font-family:Arial,Helvetica,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#eef2f7">
@@ -687,70 +717,65 @@ const sendWeeklyEmail = async (email, {
     <td align="center" style="padding:24px 16px;">
       <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:16px;overflow:hidden;">
 
-        <!-- HEADER BAR -->
+        <!-- HEADER -->
         <tr>
-          <td bgcolor="#001A4B" style="padding:14px 24px;">
+          <td bgcolor="#ffffff" style="padding:18px 24px;border-bottom:1px solid #f0f4fb;">
             <table width="100%" cellpadding="0" cellspacing="0" border="0">
               <tr>
                 <td>
-                  <p style="margin:0;font-size:16px;font-weight:900;color:#ffffff;font-family:Arial,sans-serif;letter-spacing:0.5px;">⚽ PRODE CABALLITO</p>
+                  <span style="font-size:22px;vertical-align:middle;">⚽</span>
+                  <strong style="font-size:17px;color:#001A4B;font-family:Arial,sans-serif;vertical-align:middle;"> PRODE Caballito</strong>
                 </td>
                 <td align="right">
-                  <p style="margin:0;font-size:11px;color:rgba(255,255,255,0.55);font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:0.5px;">Mundial 2026</p>
+                  <p style="margin:0;font-size:11px;color:#9ca3af;font-family:Arial,sans-serif;">Resumen semanal</p>
+                  <p style="margin:2px 0 0;font-size:12px;color:#374151;font-weight:700;font-family:Arial,sans-serif;">${weekDate}</p>
                 </td>
               </tr>
             </table>
           </td>
         </tr>
 
-        <!-- HERO IMAGE -->
+        <!-- HERO: background-image con gradiente oscuro overlay -->
         <tr>
-          <td style="padding:0;line-height:0;" bgcolor="#001A4B">
-            <img src="https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=600&q=85&fit=crop&h=260" width="600" style="display:block;max-width:100%;height:auto;" alt="Estadio de fútbol">
+          <td bgcolor="#001A4B" style="background:linear-gradient(to bottom,rgba(0,10,50,0.42) 0%,rgba(0,10,70,0.90) 100%),url('https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=600&q=90&fit=crop&h=360') center/cover no-repeat;padding:72px 28px 42px;">
+            <p style="margin:0 0 10px;font-size:11px;font-weight:700;color:#FFCC00;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:2.5px;">MUNDIAL 2026</p>
+            <h1 style="margin:0;font-size:34px;font-weight:900;color:#ffffff;font-family:Arial,sans-serif;line-height:1.1;text-transform:uppercase;">ARRANCA UNA NUEVA SEMANA</h1>
+            <h1 style="margin:4px 0 18px;font-size:34px;font-weight:900;color:#FFCC00;font-family:Arial,sans-serif;line-height:1.1;text-transform:uppercase;">DE MUNDIAL</h1>
+            <p style="margin:0;font-size:14px;color:rgba(255,255,255,0.82);font-family:Arial,sans-serif;">Así viene tu prode y lo que se juega esta semana.</p>
+            ${pendingBadge}
           </td>
         </tr>
 
-        <!-- HERO TEXT -->
+        <!-- PERSONALIZATION -->
         <tr>
-          <td bgcolor="#001A4B" style="padding:28px 24px 36px;text-align:center;">
-            <p style="margin:0 0 8px;font-size:11px;font-weight:700;color:#FFCC00;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:2.5px;">${weekDate}</p>
-            <h1 style="margin:0 0 2px;font-size:30px;font-weight:900;color:#ffffff;font-family:Arial,sans-serif;line-height:1.15;text-transform:uppercase;">ARRANCA UNA NUEVA</h1>
-            <h1 style="margin:0 0 16px;font-size:30px;font-weight:900;color:#FFCC00;font-family:Arial,sans-serif;line-height:1.15;text-transform:uppercase;">SEMANA DE MUNDIAL</h1>
-            <p style="margin:0;font-size:14px;color:rgba(255,255,255,0.65);font-family:Arial,sans-serif;">Mirá cómo venís y lo que se viene esta semana.</p>
-          </td>
-        </tr>
-
-        <!-- GREETING -->
-        <tr>
-          <td style="padding:28px 24px 4px;">
-            <p style="margin:0;font-size:15px;color:#374151;font-family:Arial,sans-serif;line-height:1.6;">
-              Hola, <strong style="color:#001A4B;">${userName}</strong> 👋<br>
-              Acá va tu resumen de la semana en el PRODE.
-            </p>
+          <td style="padding:22px 24px 0;">
+            <p style="margin:0 0 2px;font-size:16px;color:#111827;font-family:Arial,sans-serif;font-weight:600;">Hola, <strong style="color:#001A4B;">${userName}</strong> 👋</p>
+            <p style="margin:0 0 2px;font-size:14px;color:#6b7280;font-family:Arial,sans-serif;">Estás <strong style="color:#001A4B;">${userPosition}°</strong> de ${totalPlayers} jugadores.</p>
+            ${diferencia}
           </td>
         </tr>
 
         <!-- STATS: 3 cards -->
         <tr>
-          <td style="padding:20px 24px 28px;">
+          <td style="padding:18px 24px 24px;">
             <table width="100%" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td width="31%" align="center" bgcolor="#f8faff" style="padding:22px 8px;border-radius:12px;border:1px solid #e8edf8;">
+                <td width="31%" align="center" bgcolor="#f8faff" style="padding:22px 8px;border-radius:12px;">
                   <p style="margin:0;font-size:28px;line-height:1;">🏆</p>
-                  <p style="margin:10px 0 4px;font-size:32px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;line-height:1;">${userPosition}°</p>
+                  <p style="margin:10px 0 2px;font-size:36px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;line-height:1;">${userPosition}°</p>
                   <p style="margin:0;font-size:10px;color:#6b7280;font-family:Arial,sans-serif;line-height:1.5;text-transform:uppercase;letter-spacing:0.3px;">Tu posición<br>de ${totalPlayers}</p>
                 </td>
                 <td width="4%"></td>
-                <td width="31%" align="center" bgcolor="#f8faff" style="padding:22px 8px;border-radius:12px;border:1px solid #e8edf8;">
+                <td width="31%" align="center" bgcolor="#f8faff" style="padding:22px 8px;border-radius:12px;">
                   <p style="margin:0;font-size:28px;line-height:1;">🎯</p>
-                  <p style="margin:10px 0 4px;font-size:32px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;line-height:1;">${userPoints}</p>
-                  <p style="margin:0;font-size:10px;color:#6b7280;font-family:Arial,sans-serif;line-height:1.5;text-transform:uppercase;letter-spacing:0.3px;">Puntos<br>totales</p>
+                  <p style="margin:10px 0 2px;font-size:36px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;line-height:1;">${userPoints} <span style="font-size:18px;font-weight:700;">pts</span></p>
+                  <p style="margin:0;font-size:10px;color:#6b7280;font-family:Arial,sans-serif;line-height:1.5;text-transform:uppercase;letter-spacing:0.3px;">Tus puntos</p>
                 </td>
                 <td width="4%"></td>
-                <td width="31%" align="center" bgcolor="#f8faff" style="padding:22px 8px;border-radius:12px;border:1px solid #e8edf8;">
+                <td width="31%" align="center" bgcolor="#f8faff" style="padding:22px 8px;border-radius:12px;">
                   <p style="margin:0;font-size:28px;line-height:1;">📅</p>
-                  <p style="margin:10px 0 4px;font-size:22px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;line-height:1;">${bestRound}</p>
-                  <p style="margin:0;font-size:10px;color:#6b7280;font-family:Arial,sans-serif;line-height:1.5;text-transform:uppercase;letter-spacing:0.3px;">Mejor fecha<br>(${bestRoundPoints} pts)</p>
+                  <p style="margin:10px 0 2px;font-size:22px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;line-height:1;">${bestRound}</p>
+                  <p style="margin:0;font-size:10px;color:#6b7280;font-family:Arial,sans-serif;line-height:1.5;text-transform:uppercase;letter-spacing:0.3px;">Tu mejor fecha<br>(${bestRoundPoints} pts)</p>
                 </td>
               </tr>
             </table>
@@ -763,9 +788,9 @@ const sendWeeklyEmail = async (email, {
 
         <!-- CTA PRINCIPAL -->
         <tr>
-          <td style="padding:0 24px 32px;">
-            <a href="${appUrl}" style="display:block;background-color:#FFCC00;color:#001A4B;text-decoration:none;padding:18px 32px;border-radius:10px;font-size:16px;font-weight:900;font-family:Arial,sans-serif;text-align:center;text-transform:uppercase;letter-spacing:0.5px;">
-              Ver todos los partidos y apostar →
+          <td style="padding:4px 24px 32px;">
+            <a href="${appUrl}" style="display:block;background-color:#001A4B;color:#ffffff;text-decoration:none;padding:18px 32px;border-radius:10px;font-size:16px;font-weight:700;font-family:Arial,sans-serif;text-align:center;">
+              Completá tus pronósticos ahora →
             </a>
           </td>
         </tr>
@@ -774,7 +799,7 @@ const sendWeeklyEmail = async (email, {
         <tr>
           <td align="center" bgcolor="#f9fafb" style="padding:22px 24px 26px;border-top:1px solid #f0f4fb;">
             <p style="margin:0;font-size:13px;color:#4b5563;font-family:Arial,sans-serif;line-height:1.7;">
-              💙 Gracias por ser parte de <strong>PRODE Caballito</strong>.<br>¡A seguir sumando puntos esta semana! 💪
+              Gracias por jugar en <strong>PRODE Caballito</strong> 💙<br>Esta semana puede ser la tuya.
             </p>
             <p style="margin:14px 0 0;font-size:11px;color:#9ca3af;font-family:Arial,sans-serif;">
               <a href="${unsubscribeUrl}" style="color:#9ca3af;text-decoration:underline;">Cancelar suscripción</a>
