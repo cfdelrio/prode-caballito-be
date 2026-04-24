@@ -136,8 +136,10 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
 
         // Guardar líder anterior antes de recalcular
         const prevLeaderResult = await connection_1.db.query(
-            `SELECT r.user_id, u.nombre, u.whatsapp_number, u.whatsapp_consent
-             FROM ranking r JOIN users u ON r.user_id = u.id
+            `SELECT p.user_id, u.nombre, u.whatsapp_number, u.whatsapp_consent
+             FROM ranking r
+             JOIN planillas p ON r.planilla_id = p.id
+             JOIN users u ON p.user_id = u.id
              WHERE r.position = 1 LIMIT 1`
         );
         const prevLeader = prevLeaderResult.rows[0] || null;
@@ -167,9 +169,11 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
             try {
                 // Obtener ranking actualizado para posiciones
                 const rankingRows = await connection_1.db.query(
-                    `SELECT r.user_id, r.position, r.puntos_totales,
+                    `SELECT p.user_id, r.position, r.puntos_totales,
                             u.email, u.nombre, u.whatsapp_number, u.whatsapp_consent
-                     FROM ranking r JOIN users u ON r.user_id = u.id
+                     FROM ranking r
+                     JOIN planillas p ON r.planilla_id = p.id
+                     JOIN users u ON p.user_id = u.id
                      ORDER BY r.position ASC`
                 );
                 const rankingMap = {};
