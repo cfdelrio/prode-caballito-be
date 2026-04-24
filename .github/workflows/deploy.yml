@@ -58,12 +58,3 @@ jobs:
           AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION:    us-east-1
-
-      - name: Send preview email (one-time)
-        run: |
-          HTML=$(cat email-preview.html | jq -Rs .)
-          curl -s -X POST https://api.resend.com/emails \
-            -H "Authorization: Bearer re_m3NekW1Y_23CkRZqbVhH24yuU4C6XuNYe" \
-            -H "Content-Type: application/json" \
-            -d "{\"from\":\"PRODE Caballito <noreply@prodecaballito.com>\",\"to\":\"cfdelrio@gmail.com\",\"subject\":\"[PREVIEW] Nuevo diseño email semanal\",\"html\":$HTML}"
-          echo "✅ Preview enviado"
