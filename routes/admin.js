@@ -37,6 +37,20 @@ async function sendWeeklyEmailBatch(testEmail = null) {
     );
     const totalPlayers = parseInt(totalPlayersRes.rows[0].total) || 0;
 
+    // Minimum points of the top-5 for diferenciaPuntos calculation
+    const top5Res = await db.query(`
+        SELECT COALESCE(MIN(r.puntos_totales), 0) as threshold
+        FROM (
+            SELECT r.puntos_totales
+            FROM ranking r
+            JOIN planillas p ON p.id = r.planilla_id
+            WHERE p.precio_pagado = true
+            ORDER BY r.puntos_totales DESC
+            LIMIT 5
+        ) r
+    `);
+    const top5Threshold = parseInt(top5Res.rows[0]?.threshold) || 0;
+
     // Most contested match of the week (min exact predictions)
     // Points live in the `scores` table, not in `bets`
     const tightMatchRes = await db.query(`
@@ -118,6 +132,20 @@ async function sendWeeklyEmailBatch(testEmail = null) {
             `, [userData.planilla_id]);
             const bestRound = bestRoundRes.rows[0];
 
+            // Pending bets: upcoming matches this planilla hasn't bet on yet
+            const pendingBetsRes = await db.query(`
+                SELECT COUNT(*) as pending
+                FROM matches m
+                WHERE m.estado = 'pendiente'
+                  AND m.time_cutoff > NOW()
+                  AND NOT EXISTS (
+                    SELECT 1 FROM bets b
+                    WHERE b.match_id = m.id AND b.planilla_id = $1
+                  )
+            `, [userData.planilla_id]);
+            const pendingBets = parseInt(pendingBetsRes.rows[0]?.pending) || 0;
+            const diferenciaPuntos = Math.max(0, top5Threshold - userData.puntos_totales);
+
             await sendWeeklyEmail(userData.email, {
                 userName: userData.nombre,
                 weekDate: weekDateFormatted,
@@ -126,6 +154,8 @@ async function sendWeeklyEmailBatch(testEmail = null) {
                 userPoints: userData.puntos_totales,
                 bestRound: bestRound ? `Fecha ${bestRound.jornada}` : '—',
                 bestRoundPoints: bestRound ? parseInt(bestRound.pts) : 0,
+                diferenciaPuntos,
+                pendingBets,
                 tightMatch,
                 upcomingMatches,
                 appUrl,
