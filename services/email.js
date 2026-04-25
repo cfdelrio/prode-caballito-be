@@ -87,7 +87,7 @@ const sendWelcomeEmail = async (email, nombre) => {
     const fotoUrl = userResult.rows[0]?.foto_url || null;
     const avatarTd = fotoUrl
       ? `<td width="72" valign="middle" align="center" style="padding:0 12px;"><img src="${fotoUrl}" alt="avatar" width="60" height="60" style="border-radius:50%;border:2px solid #FFB700;object-fit:cover;display:block;margin:0 auto;" /></td>`
-      : '';
+      : `<td width="52" valign="middle" style="padding-right:14px;"><div style="width:44px;height:44px;background:#FFB700;border-radius:50%;text-align:center;line-height:44px;font-size:22px;">⚠️</div></td>`;
     const html = `
 <!DOCTYPE html>
 <html lang="es">
