@@ -85,13 +85,9 @@ const sendWelcomeEmail = async (email, nombre) => {
     ]);
     const totalJugadores = Number(countResult.rows[0]?.total || 0).toLocaleString('es-AR');
     const fotoUrl = userResult.rows[0]?.foto_url || null;
-    const avatarBlock = fotoUrl ? `
-      <tr>
-        <td align="center" style="padding:20px 0 0;">
-          <img src="${fotoUrl}" alt="Tu foto" width="72" height="72"
-               style="border-radius:50%;border:3px solid #FFB700;object-fit:cover;display:block;" />
-        </td>
-      </tr>` : '';
+    const avatarTd = fotoUrl
+      ? `<td width="72" valign="middle" align="center" style="padding:0 12px;"><img src="${fotoUrl}" alt="avatar" width="60" height="60" style="border-radius:50%;border:2px solid #FFB700;object-fit:cover;display:block;margin:0 auto;" /></td>`
+      : '';
     const html = `
 <!DOCTYPE html>
 <html lang="es">
@@ -213,10 +209,7 @@ const sendWelcomeEmail = async (email, nombre) => {
             <div style="color:#fff;font-size:12px;font-family:Arial,sans-serif;">Si no apostás ahora, <strong>perdés puntos.</strong></div>
           </td>
           <!-- Avatar (si tiene foto) -->
-          ${fotoUrl ? `<td width="72" valign="middle" align="center" style="padding:0 10px;">
-            <img src="${fotoUrl}" alt="${nombre}" width="60" height="60"
-                 style="border-radius:50%;border:2px solid #FFB700;object-fit:cover;display:block;" />
-          </td>` : ''}
+          ${avatarTd}
           <!-- Llama -->
           <td width="44" valign="middle" align="right">
             <div style="font-size:36px;line-height:1;">🔥</div>
