@@ -98,10 +98,11 @@ describe('sendWelcomeEmail', () => {
     expect(body.html).toContain('JUGADORES')
   })
 
-  it('no incluye img de avatar si el usuario no tiene foto', async () => {
+  it('muestra ⚠️ en la alerta si el usuario no tiene foto', async () => {
     await sendWelcomeEmail('user@test.com', 'Juan')
     const body = JSON.parse(mockFetch.mock.calls[0][1].body)
-    expect(body.html).not.toContain('Tu foto')
+    expect(body.html).not.toContain('<img')
+    expect(body.html).toContain('⚠️')
   })
 
   it('incluye avatar dentro del bloque de alerta, entre texto y llama', async () => {
