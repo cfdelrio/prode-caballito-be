@@ -221,5 +221,53 @@ router.post('/winner-image', authMiddleware, requireAdmin, async (req, res) => {
     }
 });
 
+// ── JOBS — panel de procesos manuales ───────────────────────────────────────
+
+router.post('/jobs/recalculate-ranking', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { actualizarRanking } = require('./matches');
+        await actualizarRanking();
+        res.json({ success: true, message: 'Ranking recalculado correctamente' });
+    } catch (error) {
+        console.error('[jobs/recalculate-ranking]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.post('/jobs/recalc-matchday', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { matchday_id } = req.body;
+        if (!matchday_id) return res.status(400).json({ success: false, error: 'matchday_id requerido' });
+        const { recalcMatchday } = require('./matchdays');
+        const result = await recalcMatchday(matchday_id);
+        res.json({ success: true, data: result });
+    } catch (error) {
+        console.error('[jobs/recalc-matchday]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.post('/jobs/trigger-winner', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { email, matchday_id, matchday_name, points } = req.body;
+        if (!email) return res.status(400).json({ success: false, error: 'email requerido' });
+        const userRes = await db.query(
+            `SELECT id, nombre, foto_url, email FROM users WHERE email = $1`, [email]
+        );
+        if (userRes.rows.length === 0) return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+        const user = userRes.rows[0];
+        const allEmailsRes = await db.query(`SELECT email FROM users WHERE email IS NOT NULL`);
+        const allEmails = allEmailsRes.rows.map(r => r.email);
+        const winner = { user_id: user.id, user_name: user.nombre, user_avatar: user.foto_url || null, points: points || 42 };
+        const matchday = { id: matchday_id || '00000000-0000-0000-0000-000000000001', name: matchday_name || 'Fecha de Prueba', tournament_id: null };
+        const { processWinnerNotification } = require('./matchdays');
+        await processWinnerNotification(winner, matchday, user.email, allEmails);
+        res.json({ success: true, message: `Ganador procesado: ${user.nombre}` });
+    } catch (error) {
+        console.error('[jobs/trigger-winner]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 module.exports = router;
 module.exports.sendWeeklyEmailBatch = sendWeeklyEmailBatch;

@@ -838,5 +838,6 @@ async function recalcMatchdayForMatch(matchId, tournamentId, startTime) {
 
 module.exports = router;
 module.exports.recalcMatchdayForMatch = recalcMatchdayForMatch;
+module.exports.recalcMatchday = recalcMatchday;
 module.exports.processWinnerNotification = processWinnerNotification;
 exports.default = router;
