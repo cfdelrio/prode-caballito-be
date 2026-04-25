@@ -151,14 +151,29 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
         finished = true
        WHERE id = $3`, [resultado_local, resultado_visitante, matchId]);
         const betsResult = await connection_1.db.query('SELECT * FROM bets WHERE match_id = $1', [matchId]);
-        for (const bet of betsResult.rows) {
-            const score = (0, scoring_1.calcularPuntaje)({ goles_local: bet.goles_local, goles_visitante: bet.goles_visitante }, { resultado_local, resultado_visitante });
-            await connection_1.db.query(`INSERT INTO scores (planilla_id, match_id, puntos_obtenidos, bonus_aplicado, detalle_json)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (planilla_id, match_id) DO UPDATE SET
-           puntos_obtenidos = $3,
-           bonus_aplicado = $4,
-           detalle_json = $5`, [bet.planilla_id, matchId, score.puntos, score.bonus, JSON.stringify(score.detalle)]);
+        if (betsResult.rows.length > 0) {
+            const planillaIds = [];
+            const puntosArr = [];
+            const bonusArr = [];
+            const detalleArr = [];
+            for (const bet of betsResult.rows) {
+                const score = (0, scoring_1.calcularPuntaje)(
+                    { goles_local: bet.goles_local, goles_visitante: bet.goles_visitante },
+                    { resultado_local, resultado_visitante }
+                );
+                planillaIds.push(bet.planilla_id);
+                puntosArr.push(score.puntos);
+                bonusArr.push(score.bonus);
+                detalleArr.push(JSON.stringify(score.detalle));
+            }
+            await connection_1.db.query(`
+                INSERT INTO scores (planilla_id, match_id, puntos_obtenidos, bonus_aplicado, detalle_json)
+                SELECT unnest($1::uuid[]), $2, unnest($3::int[]), unnest($4::bool[]), unnest($5::jsonb[])
+                ON CONFLICT (planilla_id, match_id) DO UPDATE SET
+                    puntos_obtenidos = EXCLUDED.puntos_obtenidos,
+                    bonus_aplicado   = EXCLUDED.bonus_aplicado,
+                    detalle_json     = EXCLUDED.detalle_json
+            `, [planillaIds, matchId, puntosArr, bonusArr, detalleArr]);
         }
         await connection_1.db.query(`INSERT INTO audit_log (user_id, action, entity_type, entity_id, new_value, ip_address, user_agent)
        VALUES ($1, 'result_published', 'matches', $2, $3, $4, $5)`, [req.user.userId, matchId, JSON.stringify({ resultado_local, resultado_visitante }), req.ip, req.headers['user-agent']]);
@@ -210,18 +225,21 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
                 }
 
                 // Email + WhatsApp por resultado a cada usuario con apuesta
+                const planillaIds = betsResult.rows.map(b => b.planilla_id);
+                const planillaUsersRes = await connection_1.db.query(
+                    'SELECT id, user_id FROM planillas WHERE id = ANY($1::uuid[])', [planillaIds]
+                );
+                const planillaToUser = {};
+                for (const row of planillaUsersRes.rows) planillaToUser[row.id] = row.user_id;
+
                 for (const bet of betsResult.rows) {
                     try {
                         const score = (0, scoring_1.calcularPuntaje)(
                             { goles_local: bet.goles_local, goles_visitante: bet.goles_visitante },
                             { resultado_local, resultado_visitante }
                         );
-                        // Obtener user_id desde planilla
-                        const planillaRes = await connection_1.db.query(
-                            'SELECT user_id FROM planillas WHERE id = $1', [bet.planilla_id]
-                        );
-                        if (planillaRes.rows.length === 0) continue;
-                        const userId = planillaRes.rows[0].user_id;
+                        const userId = planillaToUser[bet.planilla_id];
+                        if (!userId) continue;
                         const userRanking = rankingMap[userId];
                         if (!userRanking) continue;
 
