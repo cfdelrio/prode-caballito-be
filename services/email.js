@@ -595,23 +595,19 @@ function buildTightMatchSection(tightMatch) {
               <td bgcolor="#ffffff" style="padding:24px 16px;">
                 <table width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
-                    <td width="33%" align="center">
-                      <p style="margin:0;font-size:40px;line-height:1;">${homeFlag}</p>
+                    <td width="27%" align="center">
+                      <p style="margin:0;font-size:36px;line-height:1;">${homeFlag}</p>
                       <p style="margin:6px 0 0;font-size:12px;font-weight:700;color:#374151;font-family:Arial,sans-serif;">${tightMatch.home_team}</p>
                     </td>
-                    <td width="34%" align="center">
-                      <p style="margin:0;font-size:44px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;letter-spacing:2px;line-height:1;">${tightMatch.resultado_local} - ${tightMatch.resultado_visitante}</p>
+                    <td width="22%" align="center">
+                      <p style="margin:0;font-size:40px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;letter-spacing:2px;line-height:1;">${tightMatch.resultado_local} - ${tightMatch.resultado_visitante}</p>
                     </td>
-                    <td width="33%" align="center">
-                      <p style="margin:0;font-size:40px;line-height:1;">${awayFlag}</p>
+                    <td width="27%" align="center">
+                      <p style="margin:0;font-size:36px;line-height:1;">${awayFlag}</p>
                       <p style="margin:6px 0 0;font-size:12px;font-weight:700;color:#374151;font-family:Arial,sans-serif;">${tightMatch.away_team}</p>
                     </td>
-                  </tr>
-                </table>
-                <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;">
-                  <tr>
-                    <td align="center" bgcolor="#eff6ff" style="padding:10px 16px;border-radius:8px;">
-                      <p style="margin:0;font-size:13px;font-weight:700;color:#2563eb;font-family:Arial,sans-serif;">${hitsText}</p>
+                    <td width="24%" style="padding-left:12px;border-left:1px solid #e5e7eb;vertical-align:middle;">
+                      <p style="margin:0;font-size:12px;font-weight:700;color:#2563eb;font-family:Arial,sans-serif;line-height:1.4;">${hitsText}</p>
                     </td>
                   </tr>
                 </table>
@@ -737,7 +733,7 @@ const sendWeeklyEmail = async (email, {
 
         <!-- HERO: background-image con gradiente oscuro overlay -->
         <tr>
-          <td bgcolor="#001A4B" style="background:linear-gradient(to bottom,rgba(0,10,50,0.42) 0%,rgba(0,10,70,0.90) 100%),url('https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=600&q=90&fit=crop&h=360') center/cover no-repeat;padding:72px 28px 42px;">
+          <td bgcolor="#001A4B" style="background:linear-gradient(to bottom,rgba(0,10,50,0.42) 0%,rgba(0,10,70,0.90) 100%),url('https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=600&q=90&fit=crop&h=360') center/cover no-repeat;padding:72px 28px 42px;">
             <p style="margin:0 0 10px;font-size:11px;font-weight:700;color:#FFCC00;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:2.5px;">MUNDIAL 2026</p>
             <h1 style="margin:0;font-size:34px;font-weight:900;color:#ffffff;font-family:Arial,sans-serif;line-height:1.1;text-transform:uppercase;">ARRANCA UNA NUEVA SEMANA</h1>
             <h1 style="margin:4px 0 18px;font-size:34px;font-weight:900;color:#FFCC00;font-family:Arial,sans-serif;line-height:1.1;text-transform:uppercase;">DE MUNDIAL</h1>
