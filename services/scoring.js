@@ -9,18 +9,22 @@ function calcularPuntaje(bet, result) {
     const acerto_exacto_visitante = bet.goles_visitante === result.resultado_visitante;
     const exactos_count = (acerto_exacto_local ? 1 : 0) + (acerto_exacto_visitante ? 1 : 0);
     const total_goles = result.resultado_local + result.resultado_visitante;
+    // Verde: ganador correcto + diferencia de goles correcta (local - visitante)
+    const diff_bet = bet.goles_local - bet.goles_visitante;
+    const diff_result = result.resultado_local - result.resultado_visitante;
+    const acerto_diferencia = diff_bet === diff_result;
     let puntos = 0;
     if (!acerto_global) {
         puntos = 0;
     }
-    else if (exactos_count === 0) {
-        puntos = 1;
+    else if (exactos_count === 2) {
+        puntos = 3;
     }
-    else if (exactos_count === 1) {
+    else if (acerto_diferencia) {
         puntos = 2;
     }
     else {
-        puntos = 3;
+        puntos = 1;
     }
     const bonus = acerto_global && exactos_count === 2 && total_goles >= 4;
     if (bonus) {
@@ -34,7 +38,8 @@ function calcularPuntaje(bet, result) {
             acerto_exacto_local,
             acerto_exacto_visitante,
             exactos_count,
-            total_goles
+            total_goles,
+            acerto_diferencia,
         }
     };
 }
