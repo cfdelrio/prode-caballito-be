@@ -247,6 +247,21 @@ router.post('/jobs/recalc-matchday', authMiddleware, requireAdmin, async (req, r
     }
 });
 
+router.post('/jobs/send-welcome', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ success: false, error: 'email requerido' });
+        const { sendWelcomeEmail } = require('../services/email');
+        const userRes = await db.query(`SELECT nombre FROM users WHERE email = $1`, [email]);
+        if (userRes.rows.length === 0) return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+        await sendWelcomeEmail(email, userRes.rows[0].nombre);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[jobs/send-welcome]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 router.post('/jobs/trigger-winner', authMiddleware, requireAdmin, async (req, res) => {
     try {
         const { email, matchday_id, matchday_name, points } = req.body;
