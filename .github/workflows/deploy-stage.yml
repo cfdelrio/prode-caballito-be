@@ -1,0 +1,75 @@
+name: Deploy Stage to AWS Lambda
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install all dependencies (including dev)
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install production dependencies
+        run: |
+          rm -rf node_modules
+          npm ci --omit=dev
+
+      - name: Create deployment package
+        run: |
+          mkdir -p /tmp/lambda_deploy
+          cp -r . /tmp/lambda_deploy/
+          cd /tmp
+          zip -r deploy.zip lambda_deploy/ \
+            --exclude "lambda_deploy/.git/*" \
+            --exclude "lambda_deploy/.github/*" \
+            --exclude "lambda_deploy/__tests__/*"
+
+      - name: Upload package to S3 and deploy Lambda
+        run: |
+          aws s3 cp /tmp/deploy.zip s3://prode-uploads-cdelrio/lambda/prode-api-stage.zip \
+            --region us-east-1
+
+          aws lambda update-function-code \
+            --function-name prode-api-stage \
+            --s3-bucket prode-uploads-cdelrio \
+            --s3-key lambda/prode-api-stage.zip \
+            --region us-east-1
+
+          aws lambda wait function-updated \
+            --function-name prode-api-stage \
+            --region us-east-1
+
+          echo "✅ Deploy stage completado"
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION:    us-east-1
