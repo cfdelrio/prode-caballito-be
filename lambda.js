@@ -12,6 +12,7 @@ const routes_1 = require("./routes");
 const { sendWhatsApp } = require('./services/whatsapp');
 const { db } = require('./db/connection');
 const { authMiddleware, requireAdmin } = require('./middleware/auth');
+const { runConcurrent } = require('./services/concurrency');
 const app = (0, express_1.default)();
 app.set('trust proxy', 1);
 app.use(middleware_1.securityMiddleware);
@@ -52,16 +53,12 @@ app.post('/api/internal/broadcast-whatsapp', authMiddleware, requireAdmin, async
             `SELECT whatsapp_number FROM users WHERE whatsapp_number IS NOT NULL AND whatsapp_consent = true`
         );
         const numbers = result.rows.map(r => r.whatsapp_number);
-        let sent = 0;
-        let failed = 0;
-        for (const number of numbers) {
-            try {
-                await sendWhatsApp({ to: number, body: message });
-                sent++;
-            } catch (err) {
-                console.error(`[broadcast-whatsapp] error enviando a ${number}:`, err.message);
-                failed++;
-            }
+        let sent = 0, failed = 0;
+        const results = await runConcurrent(numbers, (number) =>
+            sendWhatsApp({ to: number, body: message }), 10);
+        for (const r of results) {
+            if (r.status === 'fulfilled') sent++;
+            else { failed++; console.error(`[broadcast-whatsapp] error:`, r.reason?.message); }
         }
         console.log(`[broadcast-whatsapp] total=${numbers.length} sent=${sent} failed=${failed}`);
         res.json({ success: true, data: { total: numbers.length, sent, failed } });

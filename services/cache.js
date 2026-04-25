@@ -9,6 +9,8 @@
  * lifetime. A shared Redis can be wired in later without changing callers.
  */
 
+const DEFAULT_TTL_MS = 5 * 60 * 1000 // 5 minutos
+
 const store = new Map();
 
 function get(key) {
@@ -21,7 +23,7 @@ function get(key) {
     return entry.value;
 }
 
-function set(key, value, ttlMs) {
+function set(key, value, ttlMs = DEFAULT_TTL_MS) {
     store.set(key, { value, expiresAt: Date.now() + ttlMs });
 }
 
@@ -37,4 +39,13 @@ function invalidatePrefix(prefix) {
     }
 }
 
-module.exports = { get, set, invalidate, invalidatePrefix };
+/** Returns cached value or calls fetchFn, caches and returns the result. */
+async function getOrFetch(key, fetchFn, ttlMs = DEFAULT_TTL_MS) {
+    const cached = get(key);
+    if (cached !== null) return cached;
+    const value = await fetchFn();
+    set(key, value, ttlMs);
+    return value;
+}
+
+module.exports = { get, set, invalidate, invalidatePrefix, getOrFetch };

@@ -5,7 +5,7 @@ jest.mock('../utils', () => ({
   verifyToken: mockVerifyToken,
 }))
 
-const { authMiddleware, requireAdmin } = require('../middleware/auth')
+const { authMiddleware, optionalAuth, requireAdmin, requireModerator } = require('../middleware/auth')
 
 function makeReqRes(headers = {}) {
   const req = { headers, user: undefined }
@@ -53,6 +53,34 @@ describe('authMiddleware', () => {
   })
 })
 
+describe('optionalAuth', () => {
+  beforeEach(() => jest.clearAllMocks())
+
+  it('llama next() sin user si no hay header', () => {
+    const { req, res, next } = makeReqRes()
+    optionalAuth(req, res, next)
+    expect(next).toHaveBeenCalled()
+    expect(req.user).toBeUndefined()
+  })
+
+  it('setea req.user y llama next() con token válido', () => {
+    const payload = { userId: 'u1', rol: 'user' }
+    mockVerifyToken.mockReturnValue(payload)
+    const { req, res, next } = makeReqRes({ authorization: 'Bearer validtoken' })
+    optionalAuth(req, res, next)
+    expect(next).toHaveBeenCalled()
+    expect(req.user).toEqual(payload)
+  })
+
+  it('llama next() sin error si el token es inválido (silencioso)', () => {
+    mockVerifyToken.mockImplementation(() => { throw new Error('bad') })
+    const { req, res, next } = makeReqRes({ authorization: 'Bearer badtoken' })
+    optionalAuth(req, res, next)
+    expect(next).toHaveBeenCalled()
+    expect(res.status).not.toHaveBeenCalled()
+  })
+})
+
 describe('requireAdmin', () => {
   beforeEach(() => jest.clearAllMocks())
 
@@ -78,5 +106,32 @@ describe('requireAdmin', () => {
     const next = jest.fn()
     requireAdmin(req, res, next)
     expect(next).toHaveBeenCalled()
+  })
+})
+
+describe('requireModerator', () => {
+  it('permite paso a admin', () => {
+    const req = { user: { rol: 'admin' } }
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() }
+    const next = jest.fn()
+    requireModerator(req, res, next)
+    expect(next).toHaveBeenCalled()
+  })
+
+  it('permite paso a moderator', () => {
+    const req = { user: { rol: 'moderator' } }
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() }
+    const next = jest.fn()
+    requireModerator(req, res, next)
+    expect(next).toHaveBeenCalled()
+  })
+
+  it('rechaza rol user', () => {
+    const req = { user: { rol: 'user' } }
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() }
+    const next = jest.fn()
+    requireModerator(req, res, next)
+    expect(res.status).toHaveBeenCalledWith(403)
+    expect(next).not.toHaveBeenCalled()
   })
 })

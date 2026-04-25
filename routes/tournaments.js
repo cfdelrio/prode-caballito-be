@@ -3,21 +3,22 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const connection_1 = require("../db/connection");
 const auth_1 = require("../middleware/auth");
+const cache = require("../services/cache");
 const router = (0, express_1.Router)();
 router.get('/', async (req, res) => {
     try {
-        const result = await connection_1.db.query(`
-            SELECT t.*,
-                   (SELECT COUNT(*)::int FROM matches WHERE tournament_id = t.id AND estado = 'finished') AS finished_count,
-                   (SELECT MIN(start_time) FROM matches WHERE tournament_id = t.id) AS first_match_time
-            FROM tournaments t
-            WHERE t.is_active = true
-            ORDER BY t.start_date ASC
-        `);
-        res.json({
-            success: true,
-            data: result.rows,
+        const rows = await cache.getOrFetch('tournaments:active', async () => {
+            const result = await connection_1.db.query(`
+                SELECT t.*,
+                       (SELECT COUNT(*)::int FROM matches WHERE tournament_id = t.id AND estado = 'finished') AS finished_count,
+                       (SELECT MIN(start_time) FROM matches WHERE tournament_id = t.id) AS first_match_time
+                FROM tournaments t
+                WHERE t.is_active = true
+                ORDER BY t.start_date ASC
+            `);
+            return result.rows;
         });
+        res.json({ success: true, data: rows });
     }
     catch (error) {
         console.error('Get tournaments error:', error);
@@ -87,10 +88,8 @@ router.post('/', auth_1.authMiddleware, async (req, res) => {
         const result = await connection_1.db.query(`INSERT INTO tournaments (name, description, fase, start_date, end_date) 
        VALUES ($1, $2, $3, $4, $5) 
        RETURNING *`, [name, description, fase, start_date, end_date]);
-        res.status(201).json({
-            success: true,
-            data: result.rows[0],
-        });
+        cache.invalidate('tournaments:active');
+        res.status(201).json({ success: true, data: result.rows[0] });
     }
     catch (error) {
         console.error('Create tournament error:', error);
@@ -115,10 +114,8 @@ router.put('/:id', auth_1.authMiddleware, async (req, res) => {
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Torneo no encontrado' });
         }
-        res.json({
-            success: true,
-            data: result.rows[0],
-        });
+        cache.invalidate('tournaments:active');
+        res.json({ success: true, data: result.rows[0] });
     }
     catch (error) {
         console.error('Update tournament error:', error);
@@ -129,10 +126,8 @@ router.delete('/:id', auth_1.authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
         await connection_1.db.query('UPDATE tournaments SET is_active = false WHERE id = $1', [id]);
-        res.json({
-            success: true,
-            message: 'Torneo eliminado',
-        });
+        cache.invalidate('tournaments:active');
+        res.json({ success: true, message: 'Torneo eliminado' });
     }
     catch (error) {
         console.error('Delete tournament error:', error);

@@ -6,6 +6,7 @@ const auth_1 = require("../middleware/auth");
 const scoring_1 = require("../services/scoring");
 const https = require("https");
 const { sendWhatsAppTemplate } = require("../services/whatsapp");
+const { runConcurrent } = require("../services/concurrency");
 const router = (0, express_1.Router)();
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -202,7 +203,7 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
       });
     }
 
-    for (const email of recipients) {
+    await runConcurrent(recipients, async (email) => {
       const isWinner = email === winnerEmail;
       const subject = isWinner
         ? `🏆 ¡Ganaste ${matchday.name}!`
@@ -211,13 +212,9 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
       const message = isWinner
         ? `¡Felicitaciones ${winner.user_name}! Ganaste con ${winner.points} puntos.\n${scorerLine}`
         : `${winner.user_name} ganó ${matchday.name} con ${winner.points} puntos.\n${scorerLine}`;
-      try {
-        const status = await sendImagemail(email, subject, message);
-        console.log(`Email sent to ${email} — status ${status}`);
-      } catch(e) {
-        console.error(`Failed to send to ${email}:`, e.message);
-      }
-    }
+      const status = await sendImagemail(email, subject, message);
+      console.log(`Email sent to ${email} — status ${status}`);
+    }, 10);
 
     console.log('Winner notification complete — all emails sent');
 
@@ -226,8 +223,8 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
         const waUsers = await connection_1.db.query(
             `SELECT whatsapp_number FROM users WHERE whatsapp_number IS NOT NULL AND whatsapp_consent = true`
         );
-        for (const u of waUsers.rows) {
-            await sendWhatsAppTemplate({
+        await runConcurrent(waUsers.rows, (u) =>
+            sendWhatsAppTemplate({
                 to: u.whatsapp_number,
                 templateName: 'prode_ganador_fecha',
                 variables: {
@@ -235,8 +232,8 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
                     '2': matchday.name,
                     '3': String(winner.points),
                 },
-            }).catch(e => console.error(`Winner WA error for ${u.whatsapp_number}:`, e.message));
-        }
+            }).catch(e => console.error(`Winner WA error for ${u.whatsapp_number}:`, e.message))
+        , 10);
         console.log(`Winner WA sent to ${waUsers.rows.length} users`);
     } catch(waErr) {
         console.error('Winner WA broadcast error:', waErr.message);

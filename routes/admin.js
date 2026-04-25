@@ -6,6 +6,7 @@ const { sendWhatsApp } = require("../services/whatsapp");
 const { db } = require("../db/connection");
 const { sendWeeklyEmail } = require("../services/email");
 const { runValidation } = require("../services/scoreValidator");
+const { runConcurrent } = require("../services/concurrency");
 
 const router = Router();
 
@@ -33,55 +34,43 @@ async function sendWeeklyEmailBatch(testEmail = null) {
     });
     const weekDateFormatted = weekDate.charAt(0).toUpperCase() + weekDate.slice(1);
 
-    // Total players in ranking (paid planillas)
-    const totalPlayersRes = await db.query(
-        `SELECT COUNT(*) as total FROM planillas WHERE precio_pagado = true`
-    );
+    // Global queries en paralelo
+    const [totalPlayersRes, top5Res, tightMatchRes, upcomingRes] = await Promise.all([
+        db.query(`SELECT COUNT(*) as total FROM planillas WHERE precio_pagado = true`),
+        db.query(`
+            SELECT COALESCE(MIN(r.puntos_totales), 0) as threshold
+            FROM (
+                SELECT r.puntos_totales FROM ranking r
+                JOIN planillas p ON p.id = r.planilla_id
+                WHERE p.precio_pagado = true
+                ORDER BY r.puntos_totales DESC LIMIT 5
+            ) r
+        `),
+        db.query(`
+            SELECT m.home_team, m.away_team, m.resultado_local, m.resultado_visitante,
+                COUNT(*) FILTER (WHERE s.puntos_obtenidos >= 3) as exact_hits,
+                COUNT(s.planilla_id) as total_bets
+            FROM matches m
+            JOIN scores s ON s.match_id = m.id
+            WHERE m.estado = 'finalizado' AND m.start_time >= NOW() - INTERVAL '7 days'
+            GROUP BY m.id, m.home_team, m.away_team, m.resultado_local, m.resultado_visitante
+            HAVING COUNT(s.planilla_id) > 0
+            ORDER BY COUNT(*) FILTER (WHERE s.puntos_obtenidos >= 3) ASC, COUNT(s.planilla_id) DESC
+            LIMIT 1
+        `),
+        db.query(`
+            SELECT home_team, away_team, start_time FROM matches
+            WHERE estado = 'pendiente' AND time_cutoff > NOW()
+            ORDER BY start_time ASC LIMIT 3
+        `),
+    ]);
+
     const totalPlayers = parseInt(totalPlayersRes.rows[0].total) || 0;
-
-    // Minimum points of the top-5 for diferenciaPuntos calculation
-    const top5Res = await db.query(`
-        SELECT COALESCE(MIN(r.puntos_totales), 0) as threshold
-        FROM (
-            SELECT r.puntos_totales
-            FROM ranking r
-            JOIN planillas p ON p.id = r.planilla_id
-            WHERE p.precio_pagado = true
-            ORDER BY r.puntos_totales DESC
-            LIMIT 5
-        ) r
-    `);
     const top5Threshold = parseInt(top5Res.rows[0]?.threshold) || 0;
-
-    // Most contested match of the week (min exact predictions)
-    // Points live in the `scores` table, not in `bets`
-    const tightMatchRes = await db.query(`
-        SELECT m.home_team, m.away_team, m.resultado_local, m.resultado_visitante,
-            COUNT(*) FILTER (WHERE s.puntos_obtenidos >= 3) as exact_hits,
-            COUNT(s.planilla_id) as total_bets
-        FROM matches m
-        JOIN scores s ON s.match_id = m.id
-        WHERE m.estado = 'finalizado'
-            AND m.start_time >= NOW() - INTERVAL '7 days'
-        GROUP BY m.id, m.home_team, m.away_team, m.resultado_local, m.resultado_visitante
-        HAVING COUNT(s.planilla_id) > 0
-        ORDER BY COUNT(*) FILTER (WHERE s.puntos_obtenidos >= 3) ASC,
-                 COUNT(s.planilla_id) DESC
-        LIMIT 1
-    `);
     const tightMatch = tightMatchRes.rows[0] || null;
-
-    // Upcoming matches (next 3)
-    const upcomingRes = await db.query(`
-        SELECT home_team, away_team, start_time
-        FROM matches
-        WHERE estado = 'pendiente' AND time_cutoff > NOW()
-        ORDER BY start_time ASC
-        LIMIT 3
-    `);
     const upcomingMatches = upcomingRes.rows;
 
-    // Users with their best planilla (by points)
+    // Usuarios con su mejor planilla — incluye position ya calculada en ranking
     const usersParams = testEmail ? [testEmail] : [];
     const usersFilter = testEmail ? 'AND u.email = $1' : '';
     const usersRes = await db.query(`
@@ -89,7 +78,8 @@ async function sendWeeklyEmailBatch(testEmail = null) {
             u.id as user_id, u.nombre, u.email,
             p.id as planilla_id,
             p.precio_pagado,
-            COALESCE(r.puntos_totales, 0) as puntos_totales
+            COALESCE(r.puntos_totales, 0) as puntos_totales,
+            COALESCE(r.position, 1) as ranking_position
         FROM users u
         JOIN planillas p ON p.user_id = u.id
         LEFT JOIN ranking r ON r.planilla_id = p.id
@@ -97,77 +87,75 @@ async function sendWeeklyEmailBatch(testEmail = null) {
         ORDER BY u.id, COALESCE(r.puntos_totales, 0) DESC
     `, usersParams);
 
-    // One row per user (best planilla)
     const userMap = new Map();
     for (const row of usersRes.rows) {
         if (!userMap.has(row.user_id)) userMap.set(row.user_id, row);
     }
+    if (userMap.size === 0) return { sent: 0, failed: 0, total: 0 };
+
+    const planillaIds = [...userMap.values()].map(u => u.planilla_id);
+
+    // Datos por planilla en 2 queries batch (reemplaza N×3 queries individuales)
+    const [bestRoundsRes, pendingCountsRes] = await Promise.all([
+        db.query(`
+            SELECT DISTINCT ON (b.planilla_id)
+                b.planilla_id, m.jornada, SUM(s.puntos_obtenidos) as pts
+            FROM bets b
+            JOIN matches m ON b.match_id = m.id
+            JOIN scores s ON s.planilla_id = b.planilla_id AND s.match_id = b.match_id
+            WHERE b.planilla_id = ANY($1)
+                AND s.puntos_obtenidos IS NOT NULL AND m.jornada IS NOT NULL
+            GROUP BY b.planilla_id, m.jornada
+            ORDER BY b.planilla_id, pts DESC
+        `, [planillaIds]),
+        db.query(`
+            WITH pending_matches AS (
+                SELECT id FROM matches WHERE estado = 'pendiente' AND time_cutoff > NOW()
+            )
+            SELECT p.planilla_id, COUNT(pm.id) as pending
+            FROM (SELECT UNNEST($1::uuid[]) as planilla_id) p
+            CROSS JOIN pending_matches pm
+            WHERE NOT EXISTS (
+                SELECT 1 FROM bets b WHERE b.match_id = pm.id AND b.planilla_id = p.planilla_id
+            )
+            GROUP BY p.planilla_id
+        `, [planillaIds]),
+    ]);
+
+    const bestRoundByPlanilla = {};
+    for (const r of bestRoundsRes.rows) bestRoundByPlanilla[r.planilla_id] = r;
+    const pendingByPlanilla = {};
+    for (const r of pendingCountsRes.rows) pendingByPlanilla[r.planilla_id] = parseInt(r.pending) || 0;
 
     const appUrl = 'https://prodecaballito.com/apuestas';
     const unsubscribeUrl = 'https://prodecaballito.com';
     let sent = 0, failed = 0;
 
-    for (const [, userData] of userMap) {
-        try {
-            // Position among paid planillas
-            const posRes = await db.query(`
-                SELECT COUNT(*) + 1 as position
-                FROM ranking r2
-                JOIN planillas p2 ON p2.id = r2.planilla_id
-                WHERE p2.precio_pagado = true
-                    AND r2.puntos_totales > $1
-            `, [userData.puntos_totales]);
-            const userPosition = parseInt(posRes.rows[0].position) || 1;
+    // Envío en paralelo (10 emails simultáneos)
+    const results = await runConcurrent([...userMap.values()], async (userData) => {
+        const bestRound = bestRoundByPlanilla[userData.planilla_id];
+        const pendingBets = pendingByPlanilla[userData.planilla_id] || 0;
+        const diferenciaPuntos = Math.max(0, top5Threshold - userData.puntos_totales);
+        await sendWeeklyEmail(userData.email, {
+            userName: userData.nombre,
+            weekDate: weekDateFormatted,
+            userPosition: userData.ranking_position,
+            totalPlayers,
+            userPoints: userData.puntos_totales,
+            bestRound: bestRound ? `Fecha ${bestRound.jornada}` : '—',
+            bestRoundPoints: bestRound ? parseInt(bestRound.pts) : 0,
+            diferenciaPuntos,
+            pendingBets,
+            tightMatch,
+            upcomingMatches,
+            appUrl,
+            unsubscribeUrl,
+        });
+    }, 10);
 
-            // Best round by points for this planilla (scores table has the points)
-            const bestRoundRes = await db.query(`
-                SELECT m.jornada, SUM(s.puntos_obtenidos) as pts
-                FROM bets b
-                JOIN matches m ON b.match_id = m.id
-                JOIN scores s ON s.planilla_id = b.planilla_id AND s.match_id = b.match_id
-                WHERE b.planilla_id = $1
-                    AND s.puntos_obtenidos IS NOT NULL
-                    AND m.jornada IS NOT NULL
-                GROUP BY m.jornada
-                ORDER BY pts DESC
-                LIMIT 1
-            `, [userData.planilla_id]);
-            const bestRound = bestRoundRes.rows[0];
-
-            // Pending bets: upcoming matches this planilla hasn't bet on yet
-            const pendingBetsRes = await db.query(`
-                SELECT COUNT(*) as pending
-                FROM matches m
-                WHERE m.estado = 'pendiente'
-                  AND m.time_cutoff > NOW()
-                  AND NOT EXISTS (
-                    SELECT 1 FROM bets b
-                    WHERE b.match_id = m.id AND b.planilla_id = $1
-                  )
-            `, [userData.planilla_id]);
-            const pendingBets = parseInt(pendingBetsRes.rows[0]?.pending) || 0;
-            const diferenciaPuntos = Math.max(0, top5Threshold - userData.puntos_totales);
-
-            await sendWeeklyEmail(userData.email, {
-                userName: userData.nombre,
-                weekDate: weekDateFormatted,
-                userPosition,
-                totalPlayers,
-                userPoints: userData.puntos_totales,
-                bestRound: bestRound ? `Fecha ${bestRound.jornada}` : '—',
-                bestRoundPoints: bestRound ? parseInt(bestRound.pts) : 0,
-                diferenciaPuntos,
-                pendingBets,
-                tightMatch,
-                upcomingMatches,
-                appUrl,
-                unsubscribeUrl,
-            });
-            sent++;
-        } catch (err) {
-            console.error(`[weekly-email] Error sending to ${userData.email}:`, err.message);
-            failed++;
-        }
+    for (const r of results) {
+        if (r.status === 'fulfilled') sent++;
+        else { failed++; console.error(`[weekly-email] Error:`, r.reason?.message); }
     }
 
     return { sent, failed, total: userMap.size };

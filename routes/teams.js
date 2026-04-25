@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const connection_1 = require("../db/connection");
 const auth_1 = require("../middleware/auth");
+const cache = require("../services/cache");
 const router = (0, express_1.Router)();
 
 async function ensureTeamBadgesTable() {
@@ -19,10 +20,13 @@ async function ensureTeamBadgesTable() {
 // GET /teams/badges — público, retorna { team_name: badge_url }
 router.get('/badges', async (req, res) => {
     try {
-        await ensureTeamBadgesTable();
-        const result = await connection_1.db.query('SELECT team_name, badge_url FROM team_badges ORDER BY team_name');
-        const badges = {};
-        result.rows.forEach(r => { badges[r.team_name] = r.badge_url; });
+        const badges = await cache.getOrFetch('team_badges', async () => {
+            await ensureTeamBadgesTable();
+            const result = await connection_1.db.query('SELECT team_name, badge_url FROM team_badges ORDER BY team_name');
+            const map = {};
+            result.rows.forEach(r => { map[r.team_name] = r.badge_url; });
+            return map;
+        });
         res.json({ success: true, data: badges });
     } catch (error) {
         console.error('Get badges error:', error);
@@ -46,6 +50,7 @@ router.post('/badges', auth_1.authMiddleware, async (req, res) => {
             VALUES ($1, $2, NOW())
             ON CONFLICT (team_name) DO UPDATE SET badge_url = $2, updated_at = NOW()
         `, [team_name.trim(), badge_url.trim()]);
+        cache.invalidate('team_badges');
         res.json({ success: true, message: 'Escudo guardado' });
     } catch (error) {
         console.error('Save badge error:', error);
@@ -60,6 +65,7 @@ router.delete('/badges/:team_name', auth_1.authMiddleware, async (req, res) => {
             return res.status(403).json({ success: false, error: 'Solo administradores' });
         }
         await connection_1.db.query('DELETE FROM team_badges WHERE team_name = $1', [req.params.team_name]);
+        cache.invalidate('team_badges');
         res.json({ success: true, message: 'Escudo eliminado' });
     } catch (error) {
         console.error('Delete badge error:', error);
