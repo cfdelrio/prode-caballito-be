@@ -113,7 +113,7 @@ router.get('/', async (req, res) => {
         // Mapear los resultados para usar position correcta
         const mappedRanking = result.rows.map(row => ({
             ...row,
-            position: row.official_position || row.virtual_position,
+            position: Number(row.official_position || row.virtual_position),
             is_virtual: !row.precio_pagado
         }));
         res.json({
