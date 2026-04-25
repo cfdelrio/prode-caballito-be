@@ -256,13 +256,13 @@ const sendWelcomeEmail = async (email, nombre) => {
     </td>
   </tr>
 
-  <!-- ── BLOQUE 6: CTA BUTTON (fondo dorado, botón negro) ── -->
+  <!-- ── BLOQUE 6: CTA BUTTON (fondo blanco, botón naranja) ── -->
   <tr>
-    <td style="background:#FFB700;padding:20px 20px;">
+    <td style="background:#fff;padding:20px 20px;">
       <table width="100%" cellpadding="0" cellspacing="0" border="0">
         <tr>
           <td align="center">
-            <a href="https://prodecaballito.com" style="display:block;background:#111;color:#fff;text-decoration:none;padding:16px 20px;border-radius:8px;font-size:17px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">
+            <a href="https://prodecaballito.com" style="display:block;background:#F47C00;color:#fff;text-decoration:none;padding:16px 20px;border-radius:8px;font-size:17px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">
               ⚽ &nbsp;EMPEZAR A JUGAR AHORA →
             </a>
           </td>
