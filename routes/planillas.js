@@ -155,7 +155,7 @@ router.put('/:id/lock', auth_1.authMiddleware, validation_1.uuidParam, async (re
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
-router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, res) => {
+router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, validation_1.planillaValidation, async (req, res) => {
     try {
         const { id } = req.params;
         const { nombre_planilla } = req.body;
