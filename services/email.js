@@ -84,194 +84,218 @@ const sendWelcomeEmail = async (email, nombre) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>¡Bienvenido! - PRODE Caballito</title>
+  <title>Bienvenido - PRODE Caballito</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #000000; font-family: Arial, Helvetica, sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#000000">
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,Helvetica,sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f4f4;">
+<tr><td align="center" style="padding:0;">
+<table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;margin:0 auto;">
+
+  <!-- ── BLOQUE 1: HEADER ── -->
   <tr>
-    <td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px; width: 100%;">
-
-        <!-- ====== BLOQUE 1: HEADER negro con logo ====== -->
+    <td style="background:#000;padding:14px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
         <tr>
-          <td bgcolor="#000000" style="padding: 16px 24px;">
-            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <td valign="middle">
+            <table cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td valign="middle">
-                  <span style="font-size: 18px; vertical-align: middle;">⚽</span>
-                  <span style="color: #ffffff; font-size: 13px; font-weight: 700; font-family: Arial, sans-serif; letter-spacing: 1px; vertical-align: middle;"> PRODE </span><span style="color: #FFB800; font-size: 13px; font-weight: 700; font-family: Arial, sans-serif; letter-spacing: 1px; vertical-align: middle;">CABALLITO</span>
-                </td>
-                <td align="right" valign="middle">
-                  <span style="color: #ffffff; font-size: 12px; font-family: Arial, sans-serif;">🏆 MUNDIAL 2026 · YA ARRANCÓ</span>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-        <!-- ====== BLOQUE 2: HERO con fondo oscuro tipo estadio nocturno ====== -->
-        <tr>
-          <td style="background: linear-gradient(180deg, #0A1628 0%, #05080F 50%, #0A0A00 100%); padding: 40px 28px 44px;">
-            <h1 style="color: #ffffff; margin: 0 0 2px 0; font-size: 46px; font-weight: 900; font-family: 'Arial Black', Arial, sans-serif; line-height: 1; letter-spacing: -1px; text-transform: uppercase;">ESTO YA EMPEZÓ.</h1>
-            <h2 style="color: #FFB800; margin: 6px 0 20px 0; font-size: 32px; font-weight: 900; font-family: 'Arial Black', Arial, sans-serif; line-height: 1; letter-spacing: -0.5px; text-transform: uppercase;">¿VAS A JUGAR O MIRAR?</h2>
-            <p style="color: rgba(255,255,255,0.7); margin: 0; font-size: 15px; font-family: Arial, sans-serif;">Tus amigos ya están compitiendo.</p>
-          </td>
-        </tr>
-
-        <!-- ====== BLOQUE 3: Ya estás adentro (fondo beige claro) ====== -->
-        <tr>
-          <td bgcolor="#F5F5F5" style="padding: 28px 24px;">
-            <table width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <!-- Columna izquierda -->
-                <td width="58%" valign="top" style="padding-right: 16px;">
-                  <p style="margin: 0 0 6px 0; font-size: 20px; line-height: 1;">🎉</p>
-                  <h2 style="color: #111111; margin: 0 0 8px 0; font-size: 16px; font-weight: 900; font-family: 'Arial Black', Arial, sans-serif; text-transform: uppercase; line-height: 1.2;">¡YA ESTÁS ADENTRO DEL PRODE!</h2>
-                  <p style="color: #444444; margin: 0 0 14px 0; font-size: 14px; font-family: Arial, sans-serif;"><strong>${nombre}</strong>, el juego ya empezó.</p>
-                  <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 8px;">
-                    <tr>
-                      <td valign="top" style="padding-right: 8px;">
-                        <span style="display: inline-block; background: #27AE60; color: white; width: 18px; height: 18px; border-radius: 50%; text-align: center; font-size: 11px; font-weight: bold; line-height: 18px; font-family: Arial;">✓</span>
-                      </td>
-                      <td valign="middle"><span style="color: #444; font-size: 13px; font-family: Arial, sans-serif;">Cada partido suma</span></td>
-                    </tr>
-                  </table>
-                  <table cellpadding="0" cellspacing="0" border="0">
-                    <tr>
-                      <td valign="top" style="padding-right: 8px;">
-                        <span style="display: inline-block; background: #27AE60; color: white; width: 18px; height: 18px; border-radius: 50%; text-align: center; font-size: 11px; font-weight: bold; line-height: 18px; font-family: Arial;">✓</span>
-                      </td>
-                      <td valign="middle"><span style="color: #444; font-size: 13px; font-family: Arial, sans-serif;">Cada punto te acerca al podio</span></td>
-                    </tr>
-                  </table>
-                </td>
-                <!-- Columna derecha: tarjeta oscura -->
-                <td width="42%" valign="top">
-                  <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#111111" style="border-radius: 10px;">
-                    <tr>
-                      <td align="center" style="padding: 18px 14px;">
-                        <p style="margin: 0 0 6px 0; font-size: 28px; line-height: 1;">🏆</p>
-                        <p style="color: #888888; margin: 0 0 4px 0; font-size: 9px; font-weight: 700; font-family: Arial, sans-serif; letter-spacing: 2px; text-transform: uppercase;">TU OBJETIVO:</p>
-                        <p style="color: #FFB800; margin: 0 0 4px 0; font-size: 16px; font-weight: 900; font-family: 'Arial Black', Arial, sans-serif; text-transform: uppercase; line-height: 1.1;">EL PRIMER<br>PUESTO</p>
-                        <p style="color: rgba(255,255,255,0.5); margin: 0; font-size: 11px; font-family: Arial, sans-serif;">¿Estás listo para lograrlo?</p>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-        <!-- ====== BLOQUE 4: Alerta (oscuro con borde izquierdo naranja) ====== -->
-        <tr>
-          <td bgcolor="#1A1A1A" style="border-left: 5px solid #E74C3C; padding: 20px 24px;">
-            <table width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <td width="44" valign="middle" style="padding-right: 16px;">
-                  <span style="font-size: 36px; line-height: 1;">⚠️</span>
+                <td valign="middle" style="padding-right:8px;">
+                  <div style="width:32px;height:32px;background:#fff;border-radius:50%;text-align:center;line-height:32px;font-size:16px;">⚽</div>
                 </td>
                 <td valign="middle">
-                  <h3 style="color: #ffffff; margin: 0 0 4px 0; font-size: 16px; font-weight: 900; font-family: 'Arial Black', Arial, sans-serif; text-transform: uppercase;">NO TE QUEDES AFUERA</h3>
-                  <p style="color: #cccccc; margin: 0 0 3px 0; font-size: 13px; font-family: Arial, sans-serif;">Los primeros partidos ya se están jugando.</p>
-                  <p style="color: #ffffff; margin: 0; font-size: 13px; font-family: Arial, sans-serif;"><strong>Si no apostás ahora, perdés puntos.</strong></p>
+                  <div style="color:#fff;font-size:13px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;line-height:1.1;letter-spacing:0.5px;">PRODE</div>
+                  <div style="color:#fff;font-size:10px;font-weight:400;font-family:Arial,sans-serif;letter-spacing:1px;">CABALLITO</div>
                 </td>
               </tr>
             </table>
           </td>
-        </tr>
-
-        <!-- ====== BLOQUE 5: Stats + Cómo funciona (fondo negro) ====== -->
-        <tr>
-          <td bgcolor="#000000" style="padding: 28px 24px;">
-            <table width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <!-- Columna izquierda: stat jugadores -->
-                <td width="38%" valign="top" style="padding-right: 20px; border-right: 1px solid #333333;">
-                  <p style="margin: 0 0 6px 0; font-size: 24px; line-height: 1;">👥</p>
-                  <p style="color: #888888; margin: 8px 0 2px 0; font-size: 9px; font-weight: 700; font-family: Arial, sans-serif; letter-spacing: 2px; text-transform: uppercase;">YA HAY</p>
-                  <p style="color: #ffffff; margin: 0 0 0 0; font-size: 26px; font-weight: 900; font-family: 'Arial Black', Arial, sans-serif; line-height: 1;">1.248</p>
-                  <p style="color: #ffffff; margin: 0 0 6px 0; font-size: 13px; font-weight: 700; font-family: Arial, sans-serif; text-transform: uppercase;">JUGADORES</p>
-                  <p style="color: #888888; margin: 0 0 2px 0; font-size: 12px; font-family: Arial, sans-serif;">COMPITIENDO</p>
-                  <p style="color: #666666; margin: 4px 0 0 0; font-size: 11px; font-family: Arial, sans-serif; font-style: italic;">¿Podés meterte en el top 10?</p>
-                </td>
-                <!-- Columna derecha: cómo funciona -->
-                <td width="62%" valign="top" style="padding-left: 20px;">
-                  <p style="color: #ffffff; margin: 0 0 14px 0; font-size: 13px; font-weight: 900; font-family: 'Arial Black', Arial, sans-serif; text-transform: uppercase; letter-spacing: 1px;">¿CÓMO FUNCIONA?</p>
-                  <!-- Paso 1 -->
-                  <table cellpadding="0" cellspacing="0" border="0" bgcolor="#111111" style="border-radius: 6px; margin-bottom: 8px; width: 100%;">
-                    <tr>
-                      <td style="padding: 10px 12px;">
-                        <p style="color: #ffffff; margin: 0 0 2px 0; font-size: 12px; font-weight: 700; font-family: Arial, sans-serif;">📋 APOSTÁ</p>
-                        <p style="color: #888888; margin: 0; font-size: 11px; font-family: Arial, sans-serif;">Pronosticá los resultados de cada partido.</p>
-                      </td>
-                    </tr>
-                  </table>
-                  <!-- Paso 2 -->
-                  <table cellpadding="0" cellspacing="0" border="0" bgcolor="#111111" style="border-radius: 6px; margin-bottom: 8px; width: 100%;">
-                    <tr>
-                      <td style="padding: 10px 12px;">
-                        <p style="color: #ffffff; margin: 0 0 2px 0; font-size: 12px; font-weight: 700; font-family: Arial, sans-serif;">🎯 SUMÁ PUNTOS</p>
-                        <p style="color: #888888; margin: 0; font-size: 11px; font-family: Arial, sans-serif;">Acertá resultados y acumulá la mayor cantidad de puntos.</p>
-                      </td>
-                    </tr>
-                  </table>
-                  <!-- Paso 3 -->
-                  <table cellpadding="0" cellspacing="0" border="0" bgcolor="#111111" style="border-radius: 6px; width: 100%;">
-                    <tr>
-                      <td style="padding: 10px 12px;">
-                        <p style="color: #ffffff; margin: 0 0 2px 0; font-size: 12px; font-weight: 700; font-family: Arial, sans-serif;">🏆 SUBÍ EN EL RANKING</p>
-                        <p style="color: #888888; margin: 0; font-size: 11px; font-family: Arial, sans-serif;">Escalá posiciones y competí por increíbles premios.</p>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
+          <td align="right" valign="middle">
+            <span style="color:#fff;font-size:11px;font-family:Arial,sans-serif;letter-spacing:0.5px;">🔥 MUNDIAL 2026 · YA ARRANCÓ</span>
           </td>
         </tr>
-
-        <!-- ====== BLOQUE 6: CTA (fondo dorado, botón negro) ====== -->
-        <tr>
-          <td bgcolor="#FFB800" style="padding: 24px 24px;">
-            <a href="https://prodecaballito.com" style="display: block; background: #000000; color: #ffffff; text-decoration: none; padding: 18px 20px; border-radius: 6px; font-size: 18px; font-weight: 900; font-family: 'Arial Black', Arial, sans-serif; text-transform: uppercase; letter-spacing: 0.5px; text-align: center;">
-              ⚽ EMPEZAR A JUGAR AHORA →
-            </a>
-          </td>
-        </tr>
-
-        <!-- ====== BLOQUE 7: Footer motivacional (fondo negro) ====== -->
-        <tr>
-          <td bgcolor="#000000" style="padding: 28px 24px;">
-            <table width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <td width="55%" valign="middle" style="padding-right: 16px;">
-                  <p style="margin: 0 0 6px 0; font-size: 28px; line-height: 1;">🏆</p>
-                  <h3 style="color: #ffffff; margin: 0 0 4px 0; font-size: 18px; font-weight: 900; font-family: 'Arial Black', Arial, sans-serif; text-transform: uppercase; line-height: 1.1;">ESTA PUEDE SER<br>TU SEMANA.</h3>
-                  <p style="color: rgba(255,255,255,0.55); margin: 0; font-size: 13px; font-family: Arial, sans-serif;">Entrá ahora y arrancá fuerte.</p>
-                </td>
-                <td width="45%" valign="middle" align="center">
-                  <p style="color: #FFB800; margin: 0; font-size: 24px; font-weight: 900; font-family: Georgia, serif; font-style: italic; line-height: 1.2;">¡Vamos<br>por TODO!</p>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-        <!-- ====== BLOQUE 8: Footer legal (negro) ====== -->
-        <tr>
-          <td bgcolor="#000000" align="center" style="padding: 16px 24px 24px; border-top: 1px solid #222222;">
-            <p style="color: #cccccc; font-size: 12px; margin: 0 0 5px 0; font-family: Arial, sans-serif;">Con cariño, el equipo de <strong>PRODE Caballito</strong> ❤️</p>
-            <p style="color: #555555; font-size: 10px; margin: 0; font-family: Arial, sans-serif;">
-              Si no querés recibir más correos, podés <a href="https://prodecaballito.com" style="color: #555555;">darte de baja aquí</a>.
-            </p>
-          </td>
-        </tr>
-
       </table>
     </td>
   </tr>
+
+  <!-- ── BLOQUE 2: HERO (estadio nocturno con overlay) ── -->
+  <tr>
+    <td style="background:linear-gradient(135deg,#0a1628 0%,#0d2044 30%,#1a1200 70%,#0a0a00 100%);padding:44px 28px 40px;position:relative;">
+      <!-- Headline -->
+      <div style="color:#fff;font-size:52px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;line-height:0.95;letter-spacing:-2px;text-transform:uppercase;margin-bottom:4px;">ESTO YA EMPEZÓ</div>
+      <div style="color:#FFB700;font-size:44px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;line-height:0.95;letter-spacing:-2px;text-transform:uppercase;margin-bottom:4px;">¿VAS A JUGAR</div>
+      <div style="color:#FFB700;font-size:44px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;line-height:0.95;letter-spacing:-2px;text-transform:uppercase;margin-bottom:18px;">O MIRAR?</div>
+      <div style="color:rgba(255,255,255,0.8);font-size:15px;font-family:Arial,sans-serif;">Tus amigos ya están compitiendo.</div>
+    </td>
+  </tr>
+
+  <!-- ── BLOQUE 3: YA ESTÁS ADENTRO (fondo gris claro) ── -->
+  <tr>
+    <td style="background:#f0f0f0;padding:24px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <!-- Columna izquierda -->
+          <td width="56%" valign="top" style="padding-right:12px;">
+            <div style="font-size:22px;margin-bottom:6px;">🎉</div>
+            <div style="font-size:15px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;line-height:1.2;margin-bottom:8px;">
+              <span style="color:#111;">¡YA ESTÁS </span><span style="color:#F47C00;">ADENTRO DEL PRODE!</span>
+            </div>
+            <div style="color:#333;font-size:13px;font-family:Arial,sans-serif;margin-bottom:12px;">${nombre}, el juego ya empezó.</div>
+            <!-- Bullet 1 -->
+            <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:7px;">
+              <tr>
+                <td valign="middle" style="padding-right:8px;">
+                  <div style="width:20px;height:20px;background:#27AE60;border-radius:50%;text-align:center;line-height:20px;font-size:11px;color:#fff;font-weight:bold;font-family:Arial;">✓</div>
+                </td>
+                <td valign="middle"><span style="color:#333;font-size:13px;font-family:Arial,sans-serif;">Cada partido suma</span></td>
+              </tr>
+            </table>
+            <!-- Bullet 2 -->
+            <table cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="middle" style="padding-right:8px;">
+                  <div style="width:20px;height:20px;background:#27AE60;border-radius:50%;text-align:center;line-height:20px;font-size:11px;color:#fff;font-weight:bold;font-family:Arial;">✓</div>
+                </td>
+                <td valign="middle"><span style="color:#333;font-size:13px;font-family:Arial,sans-serif;">Cada punto te acerca al podio</span></td>
+              </tr>
+            </table>
+          </td>
+          <!-- Columna derecha: card oscura -->
+          <td width="44%" valign="middle">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#1a1a2e;border-radius:12px;">
+              <tr>
+                <td align="center" style="padding:20px 14px;">
+                  <div style="font-size:30px;margin-bottom:8px;">🏆</div>
+                  <div style="color:#999;font-size:9px;font-family:Arial,sans-serif;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;">TU OBJETIVO:</div>
+                  <div style="color:#FFB700;font-size:17px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;text-transform:uppercase;line-height:1.1;margin-bottom:6px;">EL PRIMER<br>PUESTO</div>
+                  <div style="color:rgba(255,255,255,0.5);font-size:11px;font-family:Arial,sans-serif;">¿Estás listo para lograrlo?</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- ── BLOQUE 4: ALERTA (fondo oscuro, ⚠️ izq, ⚽🔥 der) ── -->
+  <tr>
+    <td style="background:#222;padding:20px 24px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <!-- Ícono advertencia -->
+          <td width="52" valign="middle" style="padding-right:14px;">
+            <div style="width:44px;height:44px;background:#FFB700;border-radius:50%;text-align:center;line-height:44px;font-size:22px;">⚠️</div>
+          </td>
+          <!-- Texto central -->
+          <td valign="middle">
+            <div style="color:#fff;font-size:15px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;text-transform:uppercase;margin-bottom:4px;">NO TE QUEDES AFUERA</div>
+            <div style="color:#ccc;font-size:12px;font-family:Arial,sans-serif;margin-bottom:3px;">Los primeros partidos ya se están jugando.</div>
+            <div style="color:#fff;font-size:12px;font-family:Arial,sans-serif;">Si no apostás ahora, <strong>perdés puntos.</strong></div>
+          </td>
+          <!-- Pelota de fuego -->
+          <td width="52" valign="middle" align="right" style="padding-left:10px;">
+            <div style="font-size:36px;line-height:1;">🔥</div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- ── BLOQUE 5: STATS + CÓMO FUNCIONA (fondo blanco) ── -->
+  <tr>
+    <td style="background:#fff;padding:24px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <!-- Columna izquierda: estadística jugadores -->
+          <td width="38%" valign="top" style="padding-right:16px;border-right:1px solid #e5e5e5;">
+            <div style="margin-bottom:8px;">
+              <div style="display:inline-block;width:36px;height:36px;background:#F47C00;border-radius:50%;text-align:center;line-height:36px;font-size:18px;">👥</div>
+            </div>
+            <div style="color:#666;font-size:9px;font-family:Arial,sans-serif;letter-spacing:2px;text-transform:uppercase;margin-bottom:2px;">YA HAY</div>
+            <div style="color:#1a2b4a;font-size:28px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;line-height:1;margin-bottom:0;">1.248 JUGADORES</div>
+            <div style="color:#1a2b4a;font-size:12px;font-weight:700;font-family:Arial,sans-serif;text-transform:uppercase;margin-bottom:6px;">COMPITIENDO</div>
+            <div style="color:#888;font-size:11px;font-family:Arial,sans-serif;">¿Podés meterte en el top 10?</div>
+          </td>
+          <!-- Columna derecha: cómo funciona (3 pasos en columna) -->
+          <td width="62%" valign="top" style="padding-left:16px;">
+            <div style="color:#1a2b4a;font-size:13px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:14px;">¿CÓMO FUNCIONA?</div>
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <!-- Paso 1 -->
+                <td width="33%" valign="top" align="center" style="padding-right:6px;">
+                  <div style="width:28px;height:28px;background:#1a2b4a;border-radius:50%;text-align:center;line-height:28px;font-size:13px;color:#fff;font-weight:bold;font-family:Arial;margin:0 auto 6px;">1</div>
+                  <div style="font-size:18px;margin-bottom:4px;">📋</div>
+                  <div style="color:#1a2b4a;font-size:10px;font-weight:700;font-family:Arial,sans-serif;text-transform:uppercase;margin-bottom:3px;">APOSTÁ</div>
+                  <div style="color:#666;font-size:10px;font-family:Arial,sans-serif;line-height:1.3;">Pronosticá los resultados de cada partido.</div>
+                </td>
+                <!-- Paso 2 -->
+                <td width="33%" valign="top" align="center" style="padding:0 3px;">
+                  <div style="width:28px;height:28px;background:#1a2b4a;border-radius:50%;text-align:center;line-height:28px;font-size:13px;color:#fff;font-weight:bold;font-family:Arial;margin:0 auto 6px;">2</div>
+                  <div style="font-size:18px;margin-bottom:4px;">🎯</div>
+                  <div style="color:#1a2b4a;font-size:10px;font-weight:700;font-family:Arial,sans-serif;text-transform:uppercase;margin-bottom:3px;">SUMÁ PUNTOS</div>
+                  <div style="color:#666;font-size:10px;font-family:Arial,sans-serif;line-height:1.3;">Acertá resultados y sumá la mayor cantidad de puntos.</div>
+                </td>
+                <!-- Paso 3 -->
+                <td width="33%" valign="top" align="center" style="padding-left:6px;">
+                  <div style="width:28px;height:28px;background:#1a2b4a;border-radius:50%;text-align:center;line-height:28px;font-size:13px;color:#fff;font-weight:bold;font-family:Arial;margin:0 auto 6px;">3</div>
+                  <div style="font-size:18px;margin-bottom:4px;">🏆</div>
+                  <div style="color:#1a2b4a;font-size:10px;font-weight:700;font-family:Arial,sans-serif;text-transform:uppercase;margin-bottom:3px;">SUBÍ EN EL RANKING</div>
+                  <div style="color:#666;font-size:10px;font-family:Arial,sans-serif;line-height:1.3;">Escalá posiciones y competí por increíbles premios.</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- ── BLOQUE 6: CTA BUTTON (fondo dorado, botón negro) ── -->
+  <tr>
+    <td style="background:#FFB700;padding:20px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td align="center">
+            <a href="https://prodecaballito.com" style="display:block;background:#111;color:#fff;text-decoration:none;padding:16px 20px;border-radius:8px;font-size:17px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;text-transform:uppercase;letter-spacing:0.5px;text-align:center;">
+              ⚽ &nbsp;EMPEZAR A JUGAR AHORA →
+            </a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- ── BLOQUE 7: FOOTER MOTIVACIONAL (fondo oscuro) ── -->
+  <tr>
+    <td style="background:#111;padding:24px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td width="55%" valign="middle" style="padding-right:12px;">
+            <div style="font-size:26px;margin-bottom:8px;">🏆</div>
+            <div style="color:#fff;font-size:17px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;text-transform:uppercase;line-height:1.15;margin-bottom:6px;">ESTA PUEDE SER<br>TU SEMANA.</div>
+            <div style="color:rgba(255,255,255,0.55);font-size:12px;font-family:Arial,sans-serif;">Entrá ahora y arrancá fuerte.</div>
+          </td>
+          <td width="45%" valign="middle" align="center">
+            <div style="color:#FFB700;font-size:28px;font-weight:900;font-family:Georgia,'Times New Roman',serif;font-style:italic;line-height:1.1;transform:rotate(-3deg);display:inline-block;">Vamos<br><span style="font-size:34px;">POR TODO!</span></div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- ── BLOQUE 8: FOOTER LEGAL (blanco) ── -->
+  <tr>
+    <td style="background:#fff;padding:16px 20px;text-align:center;border-top:1px solid #eee;">
+      <div style="color:#666;font-size:12px;font-family:Arial,sans-serif;margin-bottom:5px;">Con cariño, el equipo de <strong>PRODE Caballito</strong> ❤️</div>
+      <div style="color:#aaa;font-size:10px;font-family:Arial,sans-serif;">Si no querés recibir más correos, podés <a href="https://prodecaballito.com" style="color:#aaa;text-decoration:underline;">darte de baja aquí</a>.</div>
+    </td>
+  </tr>
+
 </table>
+</td></tr>
+</table>
+
 </body>
 </html>
   `;
