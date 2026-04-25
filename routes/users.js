@@ -84,7 +84,7 @@ router.get('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, re
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
-router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, res) => {
+router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, validation_1.userUpdateValidation, async (req, res) => {
     try {
         const { id } = req.params;
         const { nombre, idioma_pref, tema_equipo, whatsapp_number, whatsapp_consent } = req.body;

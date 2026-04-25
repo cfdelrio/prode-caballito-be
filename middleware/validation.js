@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.paginationQuery = exports.uuidParam = exports.planillaValidation = exports.messageValidation = exports.commentValidation = exports.matchResultValidation = exports.matchValidation = exports.betScoreValidation = exports.betValidation = exports.loginValidation = exports.registerValidation = exports.validate = void 0;
+exports.paginationQuery = exports.uuidParam = exports.planillaValidation = exports.userUpdateValidation = exports.messageValidation = exports.commentValidation = exports.matchResultValidation = exports.matchValidation = exports.betScoreValidation = exports.betValidation = exports.loginValidation = exports.registerValidation = exports.validate = void 0;
 const express_validator_1 = require("express-validator");
 const validate = (req, res, next) => {
     const errors = (0, express_validator_1.validationResult)(req);
@@ -64,6 +64,12 @@ exports.commentValidation = [
 exports.messageValidation = [
     (0, express_validator_1.param)('otherUserId').isUUID().withMessage('ID de usuario inválido'),
     (0, express_validator_1.body)('content').trim().notEmpty().withMessage('Mensaje requerido').isLength({ max: 1000 }).withMessage('Mensaje máximo 1000 caracteres'),
+    exports.validate,
+];
+exports.userUpdateValidation = [
+    (0, express_validator_1.body)('nombre').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Nombre debe tener entre 2 y 100 caracteres'),
+    (0, express_validator_1.body)('idioma_pref').optional().isIn(['es', 'pt-BR']).withMessage('Idioma debe ser "es" o "pt-BR"'),
+    (0, express_validator_1.body)('whatsapp_consent').optional().isBoolean().withMessage('whatsapp_consent debe ser booleano'),
     exports.validate,
 ];
 exports.planillaValidation = [
