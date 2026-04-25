@@ -97,7 +97,7 @@ router.post('/', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matchV
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
-router.put('/:id', auth_1.authMiddleware, auth_1.requireAdmin, async (req, res) => {
+router.put('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matchUpdateValidation, async (req, res) => {
     try {
         const { id } = req.params;
         const { home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, time_cutoff, estado, finished, tournament_id, sede, grupo, jornada } = req.body;

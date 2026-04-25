@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.paginationQuery = exports.uuidParam = exports.planillaValidation = exports.userUpdateValidation = exports.messageValidation = exports.commentValidation = exports.matchResultValidation = exports.matchValidation = exports.betScoreValidation = exports.betValidation = exports.loginValidation = exports.registerValidation = exports.validate = void 0;
+exports.paginationQuery = exports.uuidParam = exports.planillaValidation = exports.userUpdateValidation = exports.messageValidation = exports.commentValidation = exports.matchResultValidation = exports.matchUpdateValidation = exports.matchValidation = exports.betScoreValidation = exports.betValidation = exports.loginValidation = exports.registerValidation = exports.validate = void 0;
 const express_validator_1 = require("express-validator");
 const validate = (req, res, next) => {
     const errors = (0, express_validator_1.validationResult)(req);
@@ -43,9 +43,33 @@ exports.betScoreValidation = [
 exports.matchValidation = [
     (0, express_validator_1.body)('home_team').trim().notEmpty().withMessage('Equipo local requerido'),
     (0, express_validator_1.body)('away_team').trim().notEmpty().withMessage('Equipo visitante requerido'),
+    (0, express_validator_1.body)('home_team_pt').optional().trim().isLength({ max: 100 }),
+    (0, express_validator_1.body)('away_team_pt').optional().trim().isLength({ max: 100 }),
     (0, express_validator_1.body)('start_time').isISO8601().withMessage('Fecha/hora inválida'),
     (0, express_validator_1.body)('halftime_minutes').optional().isInt({ min: 0, max: 60 }),
     (0, express_validator_1.body)('time_cutoff').optional().isISO8601(),
+    (0, express_validator_1.body)('tournament_id').optional().isUUID().withMessage('tournament_id debe ser UUID'),
+    (0, express_validator_1.body)('planilla_id').optional().isUUID().withMessage('planilla_id debe ser UUID'),
+    (0, express_validator_1.body)('grupo').optional().trim().isLength({ max: 50 }).withMessage('grupo máximo 50 caracteres'),
+    (0, express_validator_1.body)('jornada').optional().trim().isLength({ max: 50 }).withMessage('jornada máximo 50 caracteres'),
+    (0, express_validator_1.body)('sede').optional().trim().isLength({ max: 100 }).withMessage('sede máximo 100 caracteres'),
+    exports.validate,
+];
+exports.matchUpdateValidation = [
+    (0, express_validator_1.param)('id').isUUID().withMessage('ID de partido inválido'),
+    (0, express_validator_1.body)('home_team').optional().trim().notEmpty().isLength({ max: 100 }),
+    (0, express_validator_1.body)('away_team').optional().trim().notEmpty().isLength({ max: 100 }),
+    (0, express_validator_1.body)('home_team_pt').optional().trim().isLength({ max: 100 }),
+    (0, express_validator_1.body)('away_team_pt').optional().trim().isLength({ max: 100 }),
+    (0, express_validator_1.body)('start_time').optional().isISO8601().withMessage('Fecha/hora inválida'),
+    (0, express_validator_1.body)('halftime_minutes').optional().isInt({ min: 0, max: 60 }),
+    (0, express_validator_1.body)('time_cutoff').optional().isISO8601(),
+    (0, express_validator_1.body)('estado').optional().isIn(['scheduled', 'live', 'finished']).withMessage('estado inválido'),
+    (0, express_validator_1.body)('finished').optional().isBoolean(),
+    (0, express_validator_1.body)('tournament_id').optional().isUUID().withMessage('tournament_id debe ser UUID'),
+    (0, express_validator_1.body)('grupo').optional().trim().isLength({ max: 50 }),
+    (0, express_validator_1.body)('jornada').optional().trim().isLength({ max: 50 }),
+    (0, express_validator_1.body)('sede').optional().trim().isLength({ max: 100 }),
     exports.validate,
 ];
 exports.matchResultValidation = [
