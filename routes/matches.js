@@ -5,9 +5,8 @@ const connection_1 = require("../db/connection");
 const auth_1 = require("../middleware/auth");
 const validation_1 = require("../middleware/validation");
 const scoring_1 = require("../services/scoring");
-const email_1 = require("../services/email");
-const { sendWhatsAppTemplate } = require("../services/whatsapp");
-const { pushToUser, pushToAll } = require("../services/push");
+const { notifyResult } = require("../services/resultNotifications");
+const { sendRankingUpdateEmail } = require("../services/email");
 const tournamentRanking_1 = require("../services/tournamentRanking");
 const router = (0, express_1.Router)();
 router.get('/', async (req, res) => {
@@ -180,116 +179,13 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
         await actualizarRanking();
 
         // Notificaciones post-resultado (best-effort, no bloquean la respuesta)
-        setImmediate(async () => {
-            try {
-                // Obtener ranking actualizado para posiciones
-                const rankingRows = await connection_1.db.query(
-                    `SELECT p.user_id, r.position, r.puntos_totales,
-                            u.email, u.nombre, u.whatsapp_number, u.whatsapp_consent
-                     FROM ranking r
-                     JOIN planillas p ON r.planilla_id = p.id
-                     JOIN users u ON p.user_id = u.id
-                     ORDER BY r.position ASC`
-                );
-                const rankingMap = {};
-                for (const row of rankingRows.rows) rankingMap[row.user_id] = row;
-
-                // Detectar nuevo líder
-                const newLeader = rankingRows.rows[0] || null;
-                if (newLeader && prevLeader && newLeader.user_id !== prevLeader.user_id) {
-                    // Email al nuevo líder
-                    await email_1.sendNewLeaderEmail({
-                        userEmail: newLeader.email,
-                        userName: newLeader.nombre,
-                        puntos: newLeader.puntos_totales,
-                        homeTeam: match.home_team,
-                        awayTeam: match.away_team,
-                        resultLocal: resultado_local,
-                        resultVisitante: resultado_visitante,
-                    }).catch(e => console.error('Email new leader error:', e.message));
-                    // Push al nuevo líder
-                    await pushToUser(newLeader.user_id, {
-                        title: '🔥 ¡Sos el nuevo líder!',
-                        body: `Con ${newLeader.puntos_totales} pts estás en el puesto #1 — ¡no lo sueltes!`,
-                        url: '/ranking',
-                        icon: '/favicon.svg',
-                    }).catch(e => console.error('[push] new leader error:', e.message));
-                    // WhatsApp al nuevo líder
-                    if (newLeader.whatsapp_number && newLeader.whatsapp_consent) {
-                        await sendWhatsAppTemplate({
-                            to: newLeader.whatsapp_number,
-                            templateName: 'prode_nuevo_lider',
-                            variables: { '1': String(newLeader.puntos_totales) },
-                        }).catch(e => console.error('WA new leader error:', e.message));
-                    }
-                }
-
-                // Email + WhatsApp por resultado a cada usuario con apuesta
-                const planillaIds = betsResult.rows.map(b => b.planilla_id);
-                const planillaUsersRes = await connection_1.db.query(
-                    'SELECT id, user_id FROM planillas WHERE id = ANY($1::uuid[])', [planillaIds]
-                );
-                const planillaToUser = {};
-                for (const row of planillaUsersRes.rows) planillaToUser[row.id] = row.user_id;
-
-                for (const bet of betsResult.rows) {
-                    try {
-                        const score = (0, scoring_1.calcularPuntaje)(
-                            { goles_local: bet.goles_local, goles_visitante: bet.goles_visitante },
-                            { resultado_local, resultado_visitante }
-                        );
-                        const userId = planillaToUser[bet.planilla_id];
-                        if (!userId) continue;
-                        const userRanking = rankingMap[userId];
-                        if (!userRanking) continue;
-
-                        // Email
-                        await email_1.sendResultEmail({
-                            userEmail: userRanking.email,
-                            userName: userRanking.nombre,
-                            homeTeam: match.home_team,
-                            awayTeam: match.away_team,
-                            resultLocal: resultado_local,
-                            resultVisitante: resultado_visitante,
-                            betLocal: bet.goles_local,
-                            betVisitante: bet.goles_visitante,
-                            puntos: score.puntos,
-                            rankingPos: userRanking.position,
-                        }).catch(e => console.error(`Result email error for ${userId}:`, e.message));
-
-                        // WhatsApp
-                        if (userRanking.whatsapp_number && userRanking.whatsapp_consent) {
-                            const betLine = `🎯 Tu pronóstico: ${bet.goles_local}-${bet.goles_visitante} → +${score.puntos}pts`;
-                            await sendWhatsAppTemplate({
-                                to: userRanking.whatsapp_number,
-                                templateName: 'prode_resultado_partido',
-                                variables: {
-                                    '1': match.home_team,
-                                    '2': String(resultado_local),
-                                    '3': String(resultado_visitante),
-                                    '4': match.away_team,
-                                    '5': betLine,
-                                    '6': String(userRanking.position),
-                                },
-                            }).catch(e => console.error(`Result WA error for ${userId}:`, e.message));
-                        }
-                    } catch(betErr) {
-                        console.error('Result notification error for bet:', betErr.message);
-                    }
-                }
-                // Push a todos (resultado publicado)
-                await pushToAll({
-                    title: `⚽ ${match.home_team} ${resultado_local}–${resultado_visitante} ${match.away_team}`,
-                    body: 'Resultado publicado — mirá cuántos puntos sumaste',
-                    url: '/ranking',
-                    icon: '/favicon.svg',
-                }).catch(e => console.error('[push] broadcast error:', e.message));
-
-                console.log(`[result-notif] match=${matchId} bets=${betsResult.rows.length}`);
-            } catch(notifErr) {
-                console.error('[result-notif] error:', notifErr.message);
-            }
-        });
+        setImmediate(() => notifyResult({
+            match,
+            resultLocal: resultado_local,
+            resultVisitante: resultado_visitante,
+            bets: betsResult.rows,
+            prevLeader,
+        }));
 
         // Recalculate tournament ranking if match belongs to tournament
         if (match.tournament_id) {
@@ -419,7 +315,7 @@ async function actualizarRanking() {
         const prevPos = prev?.position || null;
         if (prevPos !== row.position && row.email === TEST_EMAIL) {
             try {
-                await (0, email_1.sendRankingUpdateEmail)(row.email, row.nombre, row.position, prevPos, row.puntos_totales);
+                await sendRankingUpdateEmail(row.email, row.nombre, row.position, prevPos, row.puntos_totales);
                 console.log(`📧 Email sent to ${row.email} (position: ${row.position})`);
             }
             catch (err) {
