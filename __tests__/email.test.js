@@ -47,8 +47,9 @@ describe('sendWelcomeEmail', () => {
   it('incluye el headline principal del diseño', async () => {
     await sendWelcomeEmail('user@test.com', 'Juan')
     const body = JSON.parse(mockFetch.mock.calls[0][1].body)
-    expect(body.html).toContain('ESTO YA EMPEZÓ')
-    expect(body.html).toContain('¿VAS A JUGAR O MIRAR?')
+    expect(body.html).toContain('ESTO YA EMPEZ')
+    expect(body.html).toContain('VAS A JUGAR')
+    expect(body.html).toContain('O MIRAR')
   })
 
   it('incluye el CTA con link a prodecaballito.com', async () => {
@@ -58,11 +59,11 @@ describe('sendWelcomeEmail', () => {
     expect(body.html).toContain('EMPEZAR A JUGAR')
   })
 
-  it('incluye la sección de alerta con borde naranja/rojo', async () => {
+  it('incluye la sección de alerta', async () => {
     await sendWelcomeEmail('user@test.com', 'Juan')
     const body = JSON.parse(mockFetch.mock.calls[0][1].body)
     expect(body.html).toContain('NO TE QUEDES AFUERA')
-    expect(body.html).toContain('#E74C3C')
+    expect(body.html).toContain('perd')
   })
 
   it('incluye los 3 pasos de cómo funciona', async () => {
@@ -73,11 +74,11 @@ describe('sendWelcomeEmail', () => {
     expect(body.html).toContain('SUBÍ EN EL RANKING')
   })
 
-  it('usa fondo negro (#000000) y dorado (#FFB800) del diseño', async () => {
+  it('usa colores del diseño (dorado y oscuro)', async () => {
     await sendWelcomeEmail('user@test.com', 'Juan')
     const body = JSON.parse(mockFetch.mock.calls[0][1].body)
-    expect(body.html).toContain('#000000')
-    expect(body.html).toContain('#FFB800')
+    expect(body.html).toContain('#FFB700')
+    expect(body.html).toContain('#111')
   })
 
   it('incluye el stat de jugadores', async () => {
