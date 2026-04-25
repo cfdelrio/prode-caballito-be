@@ -84,6 +84,7 @@ const serverlessHandler = (0, serverless_http_1.default)(app, {
     basePath: '/prod',
 });
 const handler = async (event, context) => {
+    context.callbackWaitsForEmptyEventLoop = false;
     // Internal async winner notification event
     if (event.source === 'winner-notification') {
         const { recalcMatchdayForMatch } = require('./routes/matchdays');

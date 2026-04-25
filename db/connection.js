@@ -12,7 +12,7 @@ class Database {
             database: config_1.config.database.name,
             user: config_1.config.database.user,
             password: config_1.config.database.password,
-            max: 20,
+            max: 5,
             idleTimeoutMillis: 30000,
             connectionTimeoutMillis: 2000,
             ssl: {
