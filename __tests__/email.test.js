@@ -113,11 +113,11 @@ describe('sendWelcomeEmail', () => {
     const body = JSON.parse(mockFetch.mock.calls[0][1].body)
     expect(body.html).toContain('https://cdn.example.com/avatar.jpg')
     expect(body.html).toContain('border-radius:50%')
-    // avatar aparece dentro del bloque alerta (después del texto, antes de los stats)
+    // avatar aparece dentro del bloque alerta (antes del texto, antes de los stats)
     const alertaPos = body.html.indexOf('NO TE QUEDES AFUERA')
     const avatarPos = body.html.indexOf('cdn.example.com')
     const statsPos  = body.html.indexOf('JUGADORES')
-    expect(avatarPos).toBeGreaterThan(alertaPos)
+    expect(avatarPos).toBeLessThan(alertaPos)
     expect(avatarPos).toBeLessThan(statsPos)
   })
 
