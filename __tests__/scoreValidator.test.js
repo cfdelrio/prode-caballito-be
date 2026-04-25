@@ -1,6 +1,6 @@
 'use strict'
 
-const { validateScore, validateRankingTotal, findMissingScores, runValidation } = require('../services/scoreValidator')
+const { validateScore, validateRankingTotal, findMissingScores, validateRankingOrder, runValidation } = require('../services/scoreValidator')
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,7 +24,16 @@ const score = (planilla_id, match_id, puntos, bonus = false) => ({
   bonus_aplicado: bonus,
 })
 
-const ranking = (planilla_id, puntos_totales) => ({ planilla_id, puntos_totales })
+const ranking = (planilla_id, puntos_totales, position = null, extra = {}) => ({
+  planilla_id,
+  puntos_totales,
+  position,
+  aciertos_celeste: 0,
+  aciertos_rojo: 0,
+  aciertos_verde: 0,
+  aciertos_amarillo: 0,
+  ...extra,
+})
 
 // ── validateScore ─────────────────────────────────────────────────────────────
 
@@ -171,6 +180,83 @@ describe('findMissingScores', () => {
   })
 })
 
+// ── validateRankingOrder ──────────────────────────────────────────────────────
+
+describe('validateRankingOrder', () => {
+  it('sin errores con un único ranking', () => {
+    expect(validateRankingOrder([ranking('p1', 10, 1)])).toEqual([])
+  })
+
+  it('sin errores con orden correcto por puntos', () => {
+    const rankings = [ranking('p1', 20, 1), ranking('p2', 15, 2), ranking('p3', 5, 3)]
+    expect(validateRankingOrder(rankings)).toEqual([])
+  })
+
+  it('detecta posición duplicada', () => {
+    const rankings = [ranking('p1', 20, 1), ranking('p2', 15, 1)] // ambas pos=1
+    const errors = validateRankingOrder(rankings)
+    expect(errors.some(e => e.includes('duplicada'))).toBe(true)
+  })
+
+  it('detecta gap en posiciones', () => {
+    const rankings = [ranking('p1', 20, 1), ranking('p2', 15, 3)] // falta pos=2
+    const errors = validateRankingOrder(rankings)
+    expect(errors.some(e => e.includes('gap'))).toBe(true)
+  })
+
+  it('detecta orden invertido por puntos', () => {
+    // p2 tiene más puntos pero posición peor
+    const rankings = [ranking('p1', 10, 1), ranking('p2', 20, 2)]
+    const errors = validateRankingOrder(rankings)
+    expect(errors.some(e => e.includes('invertida'))).toBe(true)
+  })
+
+  it('sin errores con empate — tiebreak por aciertos_celeste', () => {
+    const a = ranking('p1', 10, 1, { aciertos_celeste: 2, aciertos_rojo: 0 })
+    const b = ranking('p2', 10, 2, { aciertos_celeste: 1, aciertos_rojo: 0 })
+    expect(validateRankingOrder([a, b])).toEqual([])
+  })
+
+  it('detecta tiebreak invertido — más celeste con posición peor', () => {
+    const a = ranking('p1', 10, 2, { aciertos_celeste: 3 }) // debería ser pos=1
+    const b = ranking('p2', 10, 1, { aciertos_celeste: 1 }) // debería ser pos=2
+    const errors = validateRankingOrder([a, b])
+    expect(errors.some(e => e.includes('invertida'))).toBe(true)
+  })
+
+  it('sin errores con empate total — orden arbitrario válido', () => {
+    const a = ranking('p1', 10, 1, { aciertos_celeste: 2, aciertos_rojo: 1, aciertos_verde: 0, aciertos_amarillo: 0 })
+    const b = ranking('p2', 10, 2, { aciertos_celeste: 2, aciertos_rojo: 1, aciertos_verde: 0, aciertos_amarillo: 0 })
+    // Empate total: cualquier orden de posiciones es válido
+    expect(validateRankingOrder([a, b])).toEqual([])
+  })
+
+  it('ignora planillas sin posición (no pagadas)', () => {
+    const rankings = [
+      ranking('p1', 20, 1),
+      ranking('p2', 0, null), // no pagada
+    ]
+    expect(validateRankingOrder(rankings)).toEqual([])
+  })
+
+  it('tiebreak completo: amarillo como último criterio', () => {
+    const a = ranking('p1', 10, 1, { aciertos_celeste: 0, aciertos_rojo: 0, aciertos_verde: 0, aciertos_amarillo: 3 })
+    const b = ranking('p2', 10, 2, { aciertos_celeste: 0, aciertos_rojo: 0, aciertos_verde: 0, aciertos_amarillo: 1 })
+    expect(validateRankingOrder([a, b])).toEqual([])
+  })
+
+  it('detecta tiebreak amarillo invertido', () => {
+    const a = ranking('p1', 10, 2, { aciertos_celeste: 0, aciertos_rojo: 0, aciertos_verde: 0, aciertos_amarillo: 3 })
+    const b = ranking('p2', 10, 1, { aciertos_celeste: 0, aciertos_rojo: 0, aciertos_verde: 0, aciertos_amarillo: 1 })
+    const errors = validateRankingOrder([a, b])
+    expect(errors.some(e => e.includes('invertida'))).toBe(true)
+  })
+
+  it('devuelve vacío con array vacío', () => {
+    expect(validateRankingOrder([])).toEqual([])
+  })
+})
+
 // ── runValidation ─────────────────────────────────────────────────────────────
 
 describe('runValidation', () => {
@@ -180,13 +266,14 @@ describe('runValidation', () => {
   it('resumen correcto con datos válidos', () => {
     const bets = [bet('p1', 'm1', 1, 0), bet('p1', 'm2', 3, 1)]
     const scores = [score('p1', 'm1', 3, false), score('p1', 'm2', 4, true)]
-    const rankings = [ranking('p1', 7)]
+    const rankings = [ranking('p1', 7, 1)]
 
     const result = runValidation([m1, m2], bets, scores, rankings)
 
     expect(result.scoreErrors).toHaveLength(0)
     expect(result.missingScores).toHaveLength(0)
     expect(result.rankingErrors).toHaveLength(0)
+    expect(result.orderErrors).toHaveLength(0)
     expect(result.summary.valid).toBe(true)
     expect(result.summary.checked_matches).toBe(2)
     expect(result.summary.checked_bets).toBe(2)
@@ -196,7 +283,7 @@ describe('runValidation', () => {
   it('detecta error de score incorrecto', () => {
     const bets = [bet('p1', 'm1', 1, 0)]
     const scores = [score('p1', 'm1', 1, false)] // debería ser 3
-    const rankings = [ranking('p1', 1)]
+    const rankings = [ranking('p1', 1, 1)]
 
     const result = runValidation([m1], bets, scores, rankings)
 
@@ -210,7 +297,7 @@ describe('runValidation', () => {
   it('detecta score faltante', () => {
     const bets = [bet('p1', 'm1', 1, 0), bet('p2', 'm1', 0, 1)]
     const scores = [score('p1', 'm1', 3, false)] // falta p2:m1
-    const rankings = [ranking('p1', 3), ranking('p2', 0)]
+    const rankings = [ranking('p1', 3, 1), ranking('p2', 0, 2)]
 
     const result = runValidation([m1], bets, scores, rankings)
 
@@ -223,7 +310,7 @@ describe('runValidation', () => {
   it('detecta ranking desincronizado', () => {
     const bets = [bet('p1', 'm1', 1, 0)]
     const scores = [score('p1', 'm1', 3, false)]
-    const rankings = [ranking('p1', 10)] // debería ser 3
+    const rankings = [ranking('p1', 10, 1)] // debería ser 3
 
     const result = runValidation([m1], bets, scores, rankings)
 
@@ -233,11 +320,24 @@ describe('runValidation', () => {
     expect(result.summary.valid).toBe(false)
   })
 
+  it('detecta orden de posiciones incorrecto', () => {
+    const bets = [bet('p1', 'm1', 1, 0), bet('p2', 'm1', 0, 1)]
+    const scores = [score('p1', 'm1', 3, false), score('p2', 'm1', 0, false)]
+    // p2 tiene 0pts pero position=1, p1 tiene 3pts pero position=2
+    const rankings = [ranking('p1', 3, 2), ranking('p2', 0, 1)]
+
+    const result = runValidation([m1], bets, scores, rankings)
+
+    expect(result.orderErrors).toHaveLength(1)
+    expect(result.orderErrors[0]).toMatch(/invertida/)
+    expect(result.summary.order_errors).toBe(1)
+    expect(result.summary.valid).toBe(false)
+  })
+
   it('ignora bets de partidos no terminados', () => {
-    const unfinished = { id: 'm99' } // sin resultado_local/visitante
     const bets = [bet('p1', 'm99', 1, 0)]
     const scores = []
-    const rankings = [ranking('p1', 0)]
+    const rankings = [ranking('p1', 0, 1)]
 
     // m99 no está en finishedMatches → se ignora
     const result = runValidation([m1], bets, scores, rankings)
@@ -255,7 +355,7 @@ describe('runValidation', () => {
       score('p1', 'm1', 3, false),
       score('p2', 'm1', 3, false),
     ]
-    const rankings = [ranking('p1', 3), ranking('p2', 3)]
+    const rankings = [ranking('p1', 3, 1), ranking('p2', 3, 2)]
 
     const result = runValidation([m1], bets, scores, rankings)
 
@@ -272,7 +372,7 @@ describe('runValidation', () => {
       score('p1', 'm1', 3, false),
       score('p1', 'm2', 4, true),
     ]
-    const rankings = [ranking('p1', 5)] // debería ser 7
+    const rankings = [ranking('p1', 5, 1)] // debería ser 7
 
     const result = runValidation([m1, m2], bets, scores, rankings)
 

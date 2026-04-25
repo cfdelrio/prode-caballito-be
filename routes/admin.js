@@ -329,7 +329,9 @@ router.get('/validate-scores', authMiddleware, requireAdmin, async (req, res) =>
                 matchIds
             ),
             db.query(
-                `SELECT r.planilla_id, r.puntos_totales FROM ranking r
+                `SELECT r.planilla_id, r.puntos_totales, r.position,
+                        r.aciertos_celeste, r.aciertos_rojo, r.aciertos_verde, r.aciertos_amarillo
+                 FROM ranking r
                  JOIN planillas p ON p.id = r.planilla_id
                  WHERE p.precio_pagado = true`
             ),

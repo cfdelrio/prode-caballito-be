@@ -27,6 +27,67 @@ function validateScore(bet, match, scoreRecord) {
 }
 
 /**
+ * Validates that the position field of each ranking row matches the official sort order:
+ * puntos_totales DESC, aciertos_celeste DESC, aciertos_rojo DESC, aciertos_verde DESC, aciertos_amarillo DESC.
+ * Only considers rows with position != null (paid planillas).
+ * Returns array of error strings.
+ */
+function validateRankingOrder(rankings) {
+  const positioned = rankings.filter(r => r.position != null)
+  if (positioned.length === 0) return []
+
+  const errors = []
+
+  // 1. Duplicate positions
+  const posCount = {}
+  for (const r of positioned) {
+    posCount[r.position] = (posCount[r.position] || 0) + 1
+  }
+  for (const [pos, count] of Object.entries(posCount)) {
+    if (count > 1) {
+      errors.push(`posición ${pos} duplicada (${count} planillas)`)
+    }
+  }
+
+  // 2. No gaps: positions must cover 1..N
+  const maxPos = Math.max(...positioned.map(r => r.position))
+  if (maxPos !== positioned.length) {
+    errors.push(`gap en posiciones: ${positioned.length} planillas pagadas pero posición máxima=${maxPos}`)
+  }
+
+  // 3. Order consistency: sort by official criteria, then verify no strict inversion
+  const c = r => [
+    r.puntos_totales,
+    r.aciertos_celeste || 0,
+    r.aciertos_rojo || 0,
+    r.aciertos_verde || 0,
+    r.aciertos_amarillo || 0,
+  ]
+
+  const sorted = [...positioned].sort((a, b) => {
+    const ca = c(a), cb = c(b)
+    for (let i = 0; i < ca.length; i++) {
+      if (cb[i] !== ca[i]) return cb[i] - ca[i]
+    }
+    return 0
+  })
+
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const a = sorted[i]
+    const b = sorted[i + 1]
+    const ca = c(a), cb = c(b)
+    const tied = ca.every((v, i) => v === cb[i])
+    if (!tied && a.position > b.position) {
+      errors.push(
+        `posición invertida: planilla ${a.planilla_id} (pos=${a.position}, pts=${a.puntos_totales}) debe ir antes que planilla ${b.planilla_id} (pos=${b.position}, pts=${b.puntos_totales})`
+      )
+    }
+  }
+
+  return errors
+}
+
+/**
  * Validates that a planilla's ranking total equals the sum of its individual scores.
  * Returns error string or null if valid.
  */
@@ -94,10 +155,14 @@ function runValidation(finishedMatches, bets, scores, rankings) {
     if (error) rankingErrors.push({ planilla_id: r.planilla_id, error })
   }
 
+  // 4. Ranking order
+  const orderErrors = validateRankingOrder(rankings)
+
   return {
     scoreErrors,
     missingScores,
     rankingErrors,
+    orderErrors,
     summary: {
       checked_matches: finishedMatches.length,
       checked_bets: finishedBets.length,
@@ -105,9 +170,10 @@ function runValidation(finishedMatches, bets, scores, rankings) {
       score_errors: scoreErrors.length,
       missing_scores: missingScores.length,
       ranking_errors: rankingErrors.length,
-      valid: scoreErrors.length === 0 && missingScores.length === 0 && rankingErrors.length === 0,
+      order_errors: orderErrors.length,
+      valid: scoreErrors.length === 0 && missingScores.length === 0 && rankingErrors.length === 0 && orderErrors.length === 0,
     },
   }
 }
 
-module.exports = { validateScore, validateRankingTotal, findMissingScores, runValidation }
+module.exports = { validateScore, validateRankingTotal, findMissingScores, validateRankingOrder, runValidation }
