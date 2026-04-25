@@ -81,7 +81,7 @@ app.use((req, res) => {
     res.status(404).json({ success: false, error: 'Ruta no encontrada' });
 });
 const serverlessHandler = (0, serverless_http_1.default)(app, {
-    basePath: '/prod',
+    basePath: process.env.API_BASE_PATH || '/prod',
 });
 const handler = async (event, context) => {
     context.callbackWaitsForEmptyEventLoop = false;
