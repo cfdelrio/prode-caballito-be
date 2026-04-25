@@ -421,4 +421,5 @@ router.post('/recalculate-ranking', async (req, res) => {
     }
 });
 exports.default = router;
+exports.actualizarRanking = actualizarRanking;
 //# sourceMappingURL=matches.js.map
