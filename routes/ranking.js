@@ -260,15 +260,11 @@ router.get('/export/json', auth_1.authMiddleware, async (req, res) => {
 async function getUserPosition(userId) {
     try {
         const result = await connection_1.db.query(`
-      SELECT r.position FROM (
-        SELECT 
-          p.user_id,
-          ROW_NUMBER() OVER (ORDER BY r.puntos_totales DESC) as position
-        FROM ranking r
-        JOIN planillas p ON r.planilla_id = p.id
-        WHERE p.precio_pagado = true
-      ) r
-      WHERE r.user_id = $1
+      SELECT r.position
+      FROM ranking r
+      JOIN planillas p ON r.planilla_id = p.id
+      WHERE p.user_id = $1 AND p.precio_pagado = true
+      LIMIT 1
     `, [userId]);
         return result.rows.length > 0 ? result.rows[0].position : null;
     }
