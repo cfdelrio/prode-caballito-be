@@ -362,8 +362,8 @@ router.post('/forgot-password', rateLimit_1.authLimiter, async (req, res) => {
 
         res.json({ success: true, message: 'Si el email existe, recibirás un código' });
     } catch (error) {
-        console.error('Forgot password error:', error);
-        res.status(500).json({ success: false, error: 'Error interno del servidor' });
+        console.error('Forgot password error:', error.message, error.stack);
+        res.status(500).json({ success: false, error: error.message || 'Error interno del servidor' });
     }
 });
 
