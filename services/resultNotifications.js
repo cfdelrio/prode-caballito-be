@@ -3,7 +3,7 @@
 const { db } = require('../db/connection');
 const { calcularPuntaje } = require('./scoring');
 const { sendNewLeaderEmail, sendResultEmail } = require('./email');
-const { sendWhatsAppTemplate } = require('./whatsapp');
+const { sendWhatsAppTemplate, sendWhatsApp } = require('./whatsapp');
 const { pushToUser, pushToAll } = require('./push');
 
 /**
@@ -34,6 +34,7 @@ async function notifyResult({ match, resultLocal, resultVisitante, bets, prevLea
         await _notifyNewLeader({ rankingRows: rankingRows.rows, prevLeader, match, resultLocal, resultVisitante });
         await _notifyBetResults({ bets, rankingMap, match, resultLocal, resultVisitante });
         await _pushBroadcast({ match, resultLocal, resultVisitante });
+        await _notifyAdmins({ match, resultLocal, resultVisitante });
 
         console.log(`[result-notif] match=${match.id} bets=${bets.length}`);
     } catch (err) {
@@ -134,6 +135,20 @@ async function _pushBroadcast({ match, resultLocal, resultVisitante }) {
         url: '/ranking',
         icon: '/favicon.svg',
     }).catch(e => console.error('[push] broadcast error:', e.message));
+}
+
+async function _notifyAdmins({ match, resultLocal, resultVisitante }) {
+    const adminsRes = await db.query(
+        `SELECT whatsapp_number FROM users WHERE rol = 'admin' AND whatsapp_number IS NOT NULL`
+    );
+    if (adminsRes.rows.length === 0) return;
+
+    const msg = `⚽ *Resultado cargado*\n${match.home_team} ${resultLocal} - ${resultVisitante} ${match.away_team}\n\nLos puntos ya fueron calculados.`;
+
+    for (const admin of adminsRes.rows) {
+        await sendWhatsApp({ to: admin.whatsapp_number, body: msg })
+            .catch(e => console.error('[notif-admin] WA error:', e.message));
+    }
 }
 
 module.exports = { notifyResult };
