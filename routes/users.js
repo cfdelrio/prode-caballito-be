@@ -244,9 +244,9 @@ router.post('/upload-avatar', auth_1.authMiddleware, rateLimit_1.uploadLimiter, 
 });
 router.put('/profile', auth_1.authMiddleware, async (req, res) => {
     try {
-        const { nombre, telefono } = req.body;
+        const { nombre } = req.body;
         const userId = req.user.userId;
-        await connection_1.db.query('UPDATE users SET nombre = COALESCE($1, nombre), telefono = COALESCE($2, telefono) WHERE id = $3', [nombre, telefono, userId]);
+        await connection_1.db.query('UPDATE users SET nombre = COALESCE($1, nombre) WHERE id = $2', [nombre, userId]);
         res.json({ success: true, message: 'Perfil actualizado correctamente' });
     }
     catch (error) {
