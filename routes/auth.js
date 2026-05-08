@@ -335,5 +335,71 @@ router.post('/complete-registration', rateLimit_1.authLimiter, async (req, res) 
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
+// POST /auth/forgot-password
+router.post('/forgot-password', rateLimit_1.authLimiter, async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ success: false, error: 'Email requerido' });
+
+        const userRes = await connection_1.db.query('SELECT id, nombre FROM users WHERE email = $1', [email]);
+        if (userRes.rows.length === 0) {
+            return res.json({ success: true, message: 'Si el email existe, recibirás un código' });
+        }
+        const user = userRes.rows[0];
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+        await connection_1.db.query(
+            'UPDATE users SET reset_code = $1, reset_code_expires_at = $2 WHERE id = $3',
+            [code, expiresAt, user.id]
+        );
+
+        await (0, email_1.sendEmail)({
+            to: email,
+            subject: 'Código para restablecer tu contraseña — PRODE Caballito',
+            html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#f9f9f9;border-radius:12px;"><h2 style="color:#001A4B;">⚽ PRODE Caballito</h2><p>Hola <strong>${user.nombre}</strong>,</p><p>Tu código para restablecer la contraseña es:</p><div style="background:#001A4B;color:#FFDF00;font-size:36px;font-weight:bold;text-align:center;padding:20px;border-radius:8px;letter-spacing:8px;margin:20px 0;">${code}</div><p style="color:#666;font-size:13px;">Expira en 15 minutos. Si no lo pediste, ignorá este email.</p></div>`,
+        });
+
+        res.json({ success: true, message: 'Si el email existe, recibirás un código' });
+    } catch (error) {
+        console.error('Forgot password error:', error);
+        res.status(500).json({ success: false, error: 'Error interno del servidor' });
+    }
+});
+
+// POST /auth/reset-password
+router.post('/reset-password', rateLimit_1.authLimiter, async (req, res) => {
+    try {
+        const { email, code, newPassword } = req.body;
+        if (!email || !code || !newPassword)
+            return res.status(400).json({ success: false, error: 'email, code y newPassword son requeridos' });
+        if (newPassword.length < 6)
+            return res.status(400).json({ success: false, error: 'La contraseña debe tener al menos 6 caracteres' });
+
+        const userRes = await connection_1.db.query(
+            'SELECT id, reset_code, reset_code_expires_at FROM users WHERE email = $1', [email]
+        );
+        if (userRes.rows.length === 0)
+            return res.status(400).json({ success: false, error: 'Código inválido o expirado' });
+
+        const user = userRes.rows[0];
+        if (!user.reset_code || user.reset_code !== code)
+            return res.status(400).json({ success: false, error: 'Código inválido o expirado' });
+        if (new Date() > new Date(user.reset_code_expires_at))
+            return res.status(400).json({ success: false, error: 'El código expiró. Pedí uno nuevo.' });
+
+        const hash_pass = await (0, utils_1.hashPassword)(newPassword);
+        await connection_1.db.query(
+            'UPDATE users SET hash_pass = $1, reset_code = NULL, reset_code_expires_at = NULL WHERE id = $2',
+            [hash_pass, user.id]
+        );
+
+        res.json({ success: true, message: 'Contraseña actualizada correctamente' });
+    } catch (error) {
+        console.error('Reset password error:', error);
+        res.status(500).json({ success: false, error: 'Error interno del servidor' });
+    }
+});
+
 exports.default = router;
 //# sourceMappingURL=auth.js.map
