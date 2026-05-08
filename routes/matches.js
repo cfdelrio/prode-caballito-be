@@ -217,7 +217,7 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
     }
     catch (error) {
         console.error('Publish result error:', error);
-        res.status(500).json({ success: false, error: 'Error interno del servidor' });
+        res.status(500).json({ success: false, error: error.message || 'Error interno del servidor' });
     }
 });
 router.delete('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.uuidParam, async (req, res) => {
