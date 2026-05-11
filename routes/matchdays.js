@@ -38,6 +38,50 @@ function openAiPost(path, body) {
   });
 }
 
+async function uploadImageToS3(imageData) {
+  const AWS = require('aws-sdk');
+  const s3 = new AWS.S3({ region: 'us-east-1' });
+  const key = `winners/${Date.now()}.png`;
+
+  let body;
+  if (typeof imageData === 'string' && imageData.startsWith('data:image/')) {
+    // base64 data URI
+    body = Buffer.from(imageData.split(',')[1], 'base64');
+  } else if (typeof imageData === 'string' && imageData.startsWith('http')) {
+    // URL remota → descargar primero
+    body = await new Promise((resolve, reject) => {
+      https.get(imageData, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          return reject(new Error(`Descarga imagen falló: HTTP ${res.statusCode}`));
+        }
+        const chunks = [];
+        res.on('data', c => chunks.push(c));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+        res.on('error', reject);
+      }).on('error', reject);
+    });
+  } else {
+    throw new Error('imageData debe ser base64 data URI o URL http(s)');
+  }
+
+  await s3.putObject({
+    Bucket: 'prode-uploads-cdelrio',
+    Key: key,
+    Body: body,
+    ContentType: 'image/png',
+  }).promise();
+
+  // URL con 10 años de vigencia (efectivamente permanente)
+  const url = s3.getSignedUrl('getObject', {
+    Bucket: 'prode-uploads-cdelrio',
+    Key: key,
+    Expires: 10 * 365 * 24 * 3600,
+  });
+  console.log('[winner] Imagen subida a S3:', key);
+  return url;
+}
+
 async function processWinnerNotification(winner, matchday, winnerEmail, allEmails = []) {
   try {
     // 1. Find top scorers with GPT-4o (null = not found)
@@ -143,28 +187,18 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
 
     if (!imageUri) throw new Error('No image generated');
 
-    // ── Persist winner image to carousel config ──────────────────────────────
+    // ── Persistir imagen del ganador en carousel config ──────────────────────
     try {
-      let imageUrl = imageUri;
-      if (imageUri.startsWith('data:image/')) {
-        // Responses API returned base64 → upload to S3 and get signed URL
-        const AWS = require('aws-sdk');
-        const s3 = new AWS.S3({ region: 'us-east-1' });
-        const key = `winners/${Date.now()}.png`;
-        await s3.putObject({
-          Bucket: 'prode-uploads-cdelrio',
-          Key: key,
-          Body: Buffer.from(imageUri.split(',')[1], 'base64'),
-          ContentType: 'image/png',
-        }).promise();
-        imageUrl = s3.getSignedUrl('getObject', {
-          Bucket: 'prode-uploads-cdelrio',
-          Key: key,
-          Expires: 365 * 24 * 3600,
-        });
-        console.log('[winner] Image uploaded to S3:', key);
-      }
-      const entry = { image_url: imageUrl, matchday_label: matchday.name, updated_at: new Date().toISOString() };
+      // Siempre subir a S3 para tener URL permanente (DALL-E URLs expiran en ~1h)
+      const imageUrl = await uploadImageToS3(imageUri);
+
+      const entry = {
+        image_url: imageUrl,
+        matchday_label: matchday.name,
+        user_name: winner.user_name,
+        points: winner.points,
+        updated_at: new Date().toISOString(),
+      };
       const existingRes = await connection_1.db.query(`SELECT value FROM config WHERE key = 'ganadores_fechas'`);
       let carouselWinners = [];
       if (existingRes.rows.length > 0) try { carouselWinners = JSON.parse(existingRes.rows[0].value) } catch {}
@@ -177,9 +211,9 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
         `INSERT INTO config (key, value, updated_at) VALUES ('ganador_fecha', $1, NOW()) ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
         [JSON.stringify(entry)]
       );
-      console.log('[winner] Image saved to carousel config — total winners:', carouselWinners.length);
+      console.log('[winner] Imagen guardada en carousel config — total ganadores:', carouselWinners.length);
     } catch (saveErr) {
-      console.error('[winner] Error saving to carousel config:', saveErr.message);
+      console.error('[winner] Error guardando en carousel config:', saveErr.message);
     }
 
     // 3. Send email to all recipients
@@ -555,7 +589,7 @@ router.get('/me', auth_1.authMiddleware, async (req, res) => {
 router.post('/recalculate', auth_1.authMiddleware, async (req, res) => {
   try {
     if (req.user.rol !== 'admin') {
-      return res.status(403).json({ success: false, error: 'Admin requerido' });
+      return res.status(400).json({ success: false, error: 'Admin requerido' });
     }
     const { tournament_id, match_date, matchday_id } = req.body;
 
@@ -602,7 +636,7 @@ router.post('/recalculate-all', auth_1.authMiddleware, async (req, res) => {
 
     const results = [];
     for (const row of datesRes.rows) {
-      const md = await ensureMatchday(tournament_id, new Date(row.match_date));
+      const md = await ensureMatchday(tournamentId, new Date(row.match_date));
       const r  = await recalcMatchday(md.id);
       results.push({ date: row.match_date, matchday_id: md.id, updated: r.updated });
     }
