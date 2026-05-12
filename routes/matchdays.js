@@ -300,19 +300,43 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
   }
 }
 
+// ── Timezone helpers ─────────────────────────────────────────────────────────
+// Argentina es UTC-3 sin DST. Usamos Intl para que sea correcto incluso si
+// en algún momento cambia el offset (históricamente ha variado).
+const ARG_TZ = 'America/Argentina/Buenos_Aires';
+
+function toArgentinaDateStr(date) {
+  // Retorna 'YYYY-MM-DD' en hora argentina (en-CA da ese formato ISO)
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: ARG_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function toArgentinaDayMonth(date) {
+  const parts = new Intl.DateTimeFormat('es-AR', {
+    timeZone: ARG_TZ,
+    day: '2-digit',
+    month: '2-digit',
+  }).formatToParts(date);
+  const p = {};
+  for (const { type, value } of parts) p[type] = value;
+  return { day: p.day, month: p.month };
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function ensureMatchday(tournamentId, matchDate) {
-  const dateStr = matchDate.toISOString().split('T')[0];
+  const dateStr = toArgentinaDateStr(matchDate);
   const existing = await connection_1.db.query(
     'SELECT * FROM matchdays WHERE tournament_id = $1 AND match_date = $2',
     [tournamentId, dateStr]
   );
   if (existing.rows.length > 0) return existing.rows[0];
 
-  const d = matchDate;
-  const day   = String(d.getUTCDate()).padStart(2, '0');
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const name  = `Fecha ${day}/${month}`;
+  const { day, month } = toArgentinaDayMonth(matchDate);
+  const name = `Fecha ${day}/${month}`;
 
   const res = await connection_1.db.query(
     `INSERT INTO matchdays (tournament_id, name, match_date)
