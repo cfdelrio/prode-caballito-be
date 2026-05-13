@@ -1,0 +1,80 @@
+name: Backup DB → S3
+
+on:
+  schedule:
+    # Todos los días a las 03:00 UTC (00:00 Argentina)
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Install postgresql-client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Dump database
+        env:
+          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H-%M-%SZ")
+          FILENAME="prode-backup-${TIMESTAMP}.sql.gz"
+          echo "FILENAME=${FILENAME}" >> $GITHUB_ENV
+
+          pg_dump \
+            --host=${{ secrets.DB_HOST }} \
+            --port=5432 \
+            --username=${{ secrets.DB_USER }} \
+            --dbname=${{ secrets.DB_NAME }} \
+            --no-password \
+            --format=plain \
+            --no-owner \
+            --no-privileges \
+          | gzip > "/tmp/${FILENAME}"
+
+          echo "✅ Dump generado: ${FILENAME} ($(du -sh /tmp/${FILENAME} | cut -f1))"
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp "/tmp/${FILENAME}" \
+            "s3://prode-uploads-cdelrio/backups/${FILENAME}" \
+            --region us-east-1
+          echo "✅ Subido a s3://prode-uploads-cdelrio/backups/${FILENAME}"
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION:    us-east-1
+
+      - name: Limpiar backups con más de 30 días
+        run: |
+          CUTOFF=$(date -u -d "30 days ago" +"%Y-%m-%dT%H-%M-%SZ" 2>/dev/null || \
+                   date -u -v-30d +"%Y-%m-%dT%H-%M-%SZ")
+
+          aws s3 ls s3://prode-uploads-cdelrio/backups/ \
+            --region us-east-1 \
+          | awk '{print $4}' \
+          | while read key; do
+              # Extraer timestamp del nombre: prode-backup-YYYY-MM-DDTHH-MM-SSZ.sql.gz
+              FILE_TS=$(echo "$key" | grep -oP '\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z')
+              if [[ -n "$FILE_TS" && "$FILE_TS" < "$CUTOFF" ]]; then
+                aws s3 rm "s3://prode-uploads-cdelrio/backups/${key}" --region us-east-1
+                echo "🗑  Eliminado: ${key}"
+              fi
+            done
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION:    us-east-1
+
+      - name: Resumen de backups en S3
+        run: |
+          echo "=== Backups actuales en S3 ==="
+          aws s3 ls s3://prode-uploads-cdelrio/backups/ --region us-east-1 --human-readable
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION:    us-east-1
