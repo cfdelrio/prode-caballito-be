@@ -317,11 +317,10 @@ async function actualizarRanking() {
     JOIN planillas p ON r.planilla_id = p.id
     JOIN users u ON p.user_id = u.id
   `);
-    const TEST_EMAIL = 'cfdelrio@gmail.com';
     for (const row of newResult.rows) {
         const prev = prevRanking.get(row.planilla_id);
         const prevPos = prev?.position || null;
-        if (prevPos !== row.position && row.email === TEST_EMAIL) {
+        if (prevPos !== row.position) {
             try {
                 await sendRankingUpdateEmail(row.email, row.nombre, row.position, prevPos, row.puntos_totales);
                 console.log(`📧 Email sent to ${row.email} (position: ${row.position})`);
