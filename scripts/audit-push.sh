@@ -11,7 +11,7 @@ run_sql() {
   echo "═══════════════════════════════════════════════════════"
   aws lambda invoke \
     --function-name prode-sql-temp \
-    --payload "$(echo -n "{\"sql\":\"$sql\"}" | base64 -w0)" \
+    --payload "{\"sql\":\"$sql\"}" \
     --cli-binary-format raw-in-base64-out \
     --region us-east-1 \
     /tmp/sql_out.json > /dev/null 2>&1
@@ -21,7 +21,7 @@ run_sql() {
 run_sql "Total de subscripciones push" \
   "SELECT COUNT(*) AS total_subs, COUNT(DISTINCT user_id) AS unique_users FROM push_subscriptions"
 
-run_sql "Distribución por antigüedad" \
+run_sql "Distribución por antigüedad (últimos 14 días)" \
   "SELECT DATE_TRUNC('day', created_at)::date AS dia, COUNT(*) AS subs FROM push_subscriptions GROUP BY 1 ORDER BY 1 DESC LIMIT 14"
 
 run_sql "% de usuarios con push activo (sobre el total)" \
