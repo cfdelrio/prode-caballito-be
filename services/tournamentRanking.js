@@ -18,18 +18,18 @@ const recalculateAllTournamentRankings = async () => {
 exports.recalculateAllTournamentRankings = recalculateAllTournamentRankings;
 const recalculateTournamentRanking = async (tournamentId) => {
     try {
-        // Get all bets for matches in this tournament
+        // Get all scores for matches in this tournament
         const betStats = await connection_1.db.query(`
-      SELECT 
+      SELECT
         p.user_id,
         p.id as planilla_id,
-        COUNT(DISTINCT b.match_id) as total_bets,
-        COALESCE(SUM(b.puntos_obtenidos), 0) as total_points,
-        COUNT(CASE WHEN b.puntos_obtenidos = 4 THEN 1 END) as exactos,
-        COUNT(CASE WHEN b.puntos_obtenidos > 0 THEN 1 END) as aciertos
+        COUNT(DISTINCT s.match_id) as total_bets,
+        COALESCE(SUM(s.puntos_obtenidos), 0) as total_points,
+        COUNT(CASE WHEN s.puntos_obtenidos = 4 THEN 1 END) as exactos,
+        COUNT(CASE WHEN s.puntos_obtenidos > 0 THEN 1 END) as aciertos
       FROM planillas p
-      LEFT JOIN bets b ON b.planilla_id = p.id
-      LEFT JOIN matches m ON b.match_id = m.id
+      LEFT JOIN scores s ON s.planilla_id = p.id
+      LEFT JOIN matches m ON s.match_id = m.id
       WHERE m.tournament_id = $1 AND m.finished = true
       GROUP BY p.user_id, p.id
     `, [tournamentId]);

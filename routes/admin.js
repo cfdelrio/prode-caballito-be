@@ -52,7 +52,7 @@ async function sendWeeklyEmailBatch(testEmail = null) {
                 COUNT(s.planilla_id) as total_bets
             FROM matches m
             JOIN scores s ON s.match_id = m.id
-            WHERE m.estado = 'finalizado' AND m.start_time >= NOW() - INTERVAL '7 days'
+            WHERE m.estado = 'finished' AND m.start_time >= NOW() - INTERVAL '7 days'
             GROUP BY m.id, m.home_team, m.away_team, m.resultado_local, m.resultado_visitante
             HAVING COUNT(s.planilla_id) > 0
             ORDER BY COUNT(*) FILTER (WHERE s.puntos_obtenidos >= 3) ASC, COUNT(s.planilla_id) DESC
@@ -60,7 +60,7 @@ async function sendWeeklyEmailBatch(testEmail = null) {
         `),
         db.query(`
             SELECT home_team, away_team, start_time FROM matches
-            WHERE estado = 'pendiente' AND time_cutoff > NOW()
+            WHERE estado = 'scheduled' AND time_cutoff > NOW()
             ORDER BY start_time ASC LIMIT 3
         `),
     ]);
@@ -110,7 +110,7 @@ async function sendWeeklyEmailBatch(testEmail = null) {
         `, [planillaIds]),
         db.query(`
             WITH pending_matches AS (
-                SELECT id FROM matches WHERE estado = 'pendiente' AND time_cutoff > NOW()
+                SELECT id FROM matches WHERE estado = 'scheduled' AND time_cutoff > NOW()
             )
             SELECT p.planilla_id, COUNT(pm.id) as pending
             FROM (SELECT UNNEST($1::uuid[]) as planilla_id) p
