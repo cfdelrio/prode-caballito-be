@@ -186,15 +186,6 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
         cache.invalidatePrefix('ranking:');
         cache.invalidatePrefix('matches:');
 
-        // Notificaciones post-resultado (best-effort, no bloquean la respuesta)
-        setImmediate(() => notifyResult({
-            match,
-            resultLocal: resultado_local,
-            resultVisitante: resultado_visitante,
-            bets: betsResult.rows,
-            prevLeader,
-        }));
-
         // Recalculate tournament ranking if match belongs to tournament
         if (match.tournament_id) {
             await (0, tournamentRanking_1.recalculateTournamentRanking)(match.tournament_id);
@@ -209,7 +200,17 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
                 console.warn('Matchday recalc warning:', mdErr.message);
             }
         }
-        
+
+        // Notificaciones ANTES de res.json(): serverless-http congela Lambda en
+        // cuanto se llama res.json(), así que cualquier código posterior nunca ejecuta.
+        await notifyResult({
+            match,
+            resultLocal: resultado_local,
+            resultVisitante: resultado_visitante,
+            bets: betsResult.rows,
+            prevLeader,
+        }).catch(e => console.error('[result-notif] unhandled:', e.message));
+
         res.json({
             success: true,
             message: `Resultados publicados. ${betsResult.rows.length} pronósticos calculados.`

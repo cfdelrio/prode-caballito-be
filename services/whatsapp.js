@@ -7,6 +7,11 @@ const WHITELIST = process.env.WHATSAPP_WHITELIST
     ? process.env.WHATSAPP_WHITELIST.split(',').map(n => n.trim()).filter(Boolean)
     : null;
 
+// SMS_WHITELIST: igual que WHATSAPP_WHITELIST pero para SMS via Infobip.
+const SMS_WHITELIST = process.env.SMS_WHITELIST
+    ? process.env.SMS_WHITELIST.split(',').map(n => n.trim()).filter(Boolean)
+    : null;
+
 // Templates aprobados por Meta via Twilio Content API
 const TEMPLATES = {
     // Body: "🔥 ¡Sos el nuevo líder del PRODE Caballito!\nCon {{1}} puntos estás en el puesto #1.\n\n¡No lo sueltes! 👉 prodecaballito.com/ranking"
@@ -54,20 +59,51 @@ const sendWhatsApp = async ({ to, body }) => {
 };
 
 const sendSMS = async ({ to, body }) => {
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken  = process.env.TWILIO_AUTH_TOKEN;
-    const from       = process.env.TWILIO_SMS_FROM; // '+17753638425'
+    const apiKey  = process.env.INFOBIP_API_KEY;
+    const baseUrl = process.env.INFOBIP_BASE_URL; // e.g. https://xxx.api.infobip.com
+    const from    = process.env.INFOBIP_SMS_FROM; // sender ID (alfanumérico hasta 11 chars) o número
 
-    if (!accountSid || !authToken || !from) {
-        console.warn('[sms] Twilio env vars not set, skipping');
+    if (!apiKey || !baseUrl || !from) {
+        console.warn('[sms] Infobip env vars not set, skipping');
         return;
     }
 
+    if (SMS_WHITELIST) {
+        const normalize = (n) => n.replace(/^\+/, '');
+        if (!SMS_WHITELIST.map(normalize).includes(normalize(to))) {
+            console.log(`[sms] ${to} not in whitelist, skipping`);
+            return;
+        }
+    }
+
     const normalized = to.startsWith('+') ? to : `+${to}`;
-    const twilio = require('twilio')(accountSid, authToken);
-    const message = await twilio.messages.create({ from, to: normalized, body });
-    console.log(`[sms] sent to ${normalized} — sid: ${message.sid}`);
-    return message;
+
+    const response = await fetch(`${baseUrl}/sms/2/text/advanced`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `App ${apiKey}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+            messages: [{
+                destinations: [{ to: normalized }],
+                from,
+                text: body,
+            }],
+        }),
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Infobip SMS failed: ${response.status} ${errText}`);
+    }
+
+    const data = await response.json();
+    const messageId = data.messages?.[0]?.messageId;
+    const status    = data.messages?.[0]?.status?.name;
+    console.log(`[sms] sent to ${normalized} — id: ${messageId} status: ${status}`);
+    return data;
 };
 
 const sendWhatsAppTemplate = async ({ to, templateName, variables }) => {
