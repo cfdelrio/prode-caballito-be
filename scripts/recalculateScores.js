@@ -1,25 +1,16 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const connection_1 = require("../db/connection");
+const scoring_1 = require("../services/scoring");
 function calculateScore(betHome, betAway, resHome, resAway) {
-    let points = 0;
-    let bonus = false;
-    const detail = [];
-    if (betHome === resHome && betAway === resAway) {
-        points = 3;
-        bonus = true;
-        detail.push('Resultado exacto (+3 pts)');
-    }
-    else if ((betHome > betAway && resHome > resAway) ||
-        (betHome < betAway && resHome < resAway) ||
-        (betHome === betAway && resHome === resAway)) {
-        points = 1;
-        detail.push('Ganador correcto (+1 pt)');
-    }
-    else {
-        detail.push('Incorrecto (0 pts)');
-    }
-    return { points, bonus, detail };
+    const bet = { goles_local: betHome, goles_visitante: betAway };
+    const result = { resultado_local: resHome, resultado_visitante: resAway };
+    const scoreResult = scoring_1.calcularPuntaje(bet, result);
+    return {
+        points: scoreResult.puntos,
+        bonus: scoreResult.bonus,
+        detail: JSON.stringify(scoreResult.detalle)
+    };
 }
 async function recalculateScores() {
     console.log('🏆 Calculando scores...');
@@ -34,7 +25,7 @@ async function recalculateScores() {
          ON CONFLICT (planilla_id, match_id) DO UPDATE SET
            puntos_obtenidos = EXCLUDED.puntos_obtenidos,
            bonus_aplicado = EXCLUDED.bonus_aplicado,
-           detalle_json = EXCLUDED.detalle_json`, [bet.planilla_id, match.id, score.points, score.bonus, JSON.stringify(score.detail)]);
+           detalle_json = EXCLUDED.detalle_json`, [bet.planilla_id, match.id, score.points, score.bonus, score.detail]);
             scoreCount++;
         }
     }
