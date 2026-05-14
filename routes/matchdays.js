@@ -133,7 +133,7 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
     if (winner.user_avatar) {
       try {
         const respRes = await openAiPost('/v1/responses', {
-          model: 'gpt-4o',
+          model: 'gpt-image-1',
           input: [{
             role: 'user',
             content: [
@@ -177,7 +177,6 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
         n: 1,
         size: '1024x1024',
         quality: 'hd',
-        style: 'vivid',
       });
       if (imageRes.error) {
         console.error('DALL-E error:', JSON.stringify(imageRes.error));
