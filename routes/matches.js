@@ -201,13 +201,8 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
             }
         }
 
-        res.json({
-            success: true,
-            message: `Resultados publicados. ${betsResult.rows.length} pronósticos calculados.`
-        });
-
-        // Notificaciones post-resultado — se ejecutan DESPUÉS de la respuesta pero ANTES
-        // de que Lambda congele el container. setImmediate no es confiable en Lambda.
+        // Notificaciones ANTES de res.json(): serverless-http congela Lambda en
+        // cuanto se llama res.json(), así que cualquier código posterior nunca ejecuta.
         await notifyResult({
             match,
             resultLocal: resultado_local,
@@ -215,6 +210,11 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
             bets: betsResult.rows,
             prevLeader,
         }).catch(e => console.error('[result-notif] unhandled:', e.message));
+
+        res.json({
+            success: true,
+            message: `Resultados publicados. ${betsResult.rows.length} pronósticos calculados.`
+        });
     }
     catch (error) {
         console.error('Publish result error:', error);
