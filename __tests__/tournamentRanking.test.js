@@ -113,6 +113,22 @@ describe('recalculateTournamentRanking', () => {
     expect(selectCall[0]).toMatch(/precio_pagado\s*=\s*true/i)
   })
 
+  // REGRESION GUARD: solo partidos con resultado publicado (estado='finished').
+  // m.finished=true es una columna distinta — puede estar en true para partidos sin resultado.
+  it('el SELECT usa estado = finished, no la columna booleana finished', async () => {
+    setupQuerySequence(
+      makeBetStats([]),
+      { rows: [] },
+      { rows: [] },
+    )
+
+    await recalculateTournamentRanking('t1')
+
+    const selectCall = mockQuery.mock.calls[0]
+    expect(selectCall[0]).toMatch(/estado\s*=\s*'finished'/i)
+    expect(selectCall[0]).not.toMatch(/m\.finished\s*=\s*true/i)
+  })
+
   // REGRESION GUARD: la regla de negocio dice "ranking por planilla, no por usuario".
   // Sumar puntos por usuario daría ventaja a quien compra más planillas.
   it('usuario con 2 planillas genera 2 INSERTs distintos (no se suma ni overwrite)', async () => {
