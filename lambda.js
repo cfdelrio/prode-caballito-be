@@ -147,6 +147,15 @@ const handler = async (event, context) => {
         return { statusCode: 200, body: JSON.stringify(result) };
     }
 
+    // EventBridge pre-cutoff reminder (every 10 min)
+    // Rule cron: */10 * * * ? *
+    if (event.source === 'prode.reminder-cutoff' || event['detail-type'] === 'reminder-cutoff') {
+        const { runCutoffReminders } = require('./services/reminderCutoff');
+        const result = await runCutoffReminders();
+        console.log('[prode.reminder-cutoff] Result:', result);
+        return { statusCode: 200, body: JSON.stringify(result) };
+    }
+
     const response = await serverlessHandler(event, context);
     // Asegurarse de que los headers CORS estén presentes
     if (!response.headers) {
