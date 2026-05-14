@@ -15,7 +15,40 @@ function calculateScore(betHome, betAway, resHome, resAway) {
     };
 }
 
+async function applyMigration005() {
+    const colCheck = await connection_1.db.query(`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'tournament_rankings' AND column_name = 'planilla_id'
+    `);
+    if (colCheck.rows.length > 0) {
+        console.log('✅ Migration 005: already applied');
+        return;
+    }
+    console.log('🔧 Applying migration 005: tournament_rankings per planilla...');
+    await connection_1.db.query(`ALTER TABLE tournament_rankings ADD COLUMN planilla_id UUID REFERENCES planillas(id) ON DELETE CASCADE`);
+    await connection_1.db.query(`
+        DO $$
+        DECLARE constraint_name TEXT;
+        BEGIN
+            SELECT conname INTO constraint_name FROM pg_constraint
+            WHERE conrelid = 'tournament_rankings'::regclass AND contype = 'u'
+                AND pg_get_constraintdef(oid) LIKE '%user_id%'
+                AND pg_get_constraintdef(oid) NOT LIKE '%planilla_id%'
+            LIMIT 1;
+            IF constraint_name IS NOT NULL THEN
+                EXECUTE format('ALTER TABLE tournament_rankings DROP CONSTRAINT %I', constraint_name);
+            END IF;
+        END $$;
+    `);
+    await connection_1.db.query('DELETE FROM tournament_rankings');
+    await connection_1.db.query('ALTER TABLE tournament_rankings ALTER COLUMN planilla_id SET NOT NULL');
+    await connection_1.db.query(`ALTER TABLE tournament_rankings ADD CONSTRAINT tournament_rankings_tournament_id_planilla_id_key UNIQUE (tournament_id, planilla_id)`);
+    await connection_1.db.query(`CREATE INDEX IF NOT EXISTS idx_tournament_rankings_planilla ON tournament_rankings(planilla_id)`);
+    console.log('✅ Migration 005 applied');
+}
+
 async function recalculateScores() {
+    await applyMigration005();
     console.log('🏆 Calculando scores...');
     // Solo matches finalizados con resultado válido
     const matchesResult = await connection_1.db.query(`
