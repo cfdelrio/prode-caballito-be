@@ -7,6 +7,75 @@ const { authMiddleware, requireAdmin } = require('../middleware/auth');
 
 const API_BASE = process.env.API_URL || 'https://t49euho172.execute-api.us-east-1.amazonaws.com/prod/api';
 
+// ─── Inbound 0800 ─────────────────────────────────────────────────────────────
+
+const MENU_MESSAGES = {
+  '1': 'El reglamento es simple. Hacés tus pronósticos antes del inicio de cada partido. Los resultados se toman al finalizar los 90 minutos reglamentarios. No cuentan alargues ni penales. Sumás puntos según tus aciertos y competís en el ranking general.',
+  '2': 'Para jugar, ingresá a ProdeCaballito, completá tus pronósticos y seguí el ranking en vivo. La idea es demostrar quién sabe más de fútbol entre amigos, conocidos y fanáticos.',
+  '3': 'La primera ronda es la etapa inicial del juego. Luego, cuando el Mundial esté avanzado, se habilitará la segunda ronda. Cada jornada suma emoción y actualiza el ranking.',
+  '4': 'Sumate al canal oficial de WhatsApp de ProdeCaballito para recibir novedades, cierres, rankings y avisos importantes. El link está disponible en nuestras redes y en la web oficial.',
+};
+
+function buildWelcomeTwiml() {
+  const menuUrl = `${API_BASE}/voice/menu`;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather numDigits="1" action="${menuUrl}" method="POST" timeout="8">
+    <Say language="es-AR" voice="Polly.Conchita">
+      Bienvenido a ProdeCaballito.
+      El prode futbolero donde competís contra todos en tiempo real.
+      Para escuchar el reglamento, presioná 1.
+      Para saber cómo jugar, presioná 2.
+      Para información sobre la primera ronda, presioná 3.
+      Para sumarte al canal oficial de WhatsApp, presioná 4.
+    </Say>
+  </Gather>
+  <Say language="es-AR" voice="Polly.Conchita">No recibimos ninguna opción. Gracias por llamar a ProdeCaballito. ¡Nos vemos en el podio!</Say>
+</Response>`;
+}
+
+// POST /api/voice — punto de entrada para llamadas entrantes del 0800
+router.post('/', (req, res) => {
+  const { CallSid, From } = req.body || {};
+  console.log(`[voice-inbound] CallSid=${CallSid} from=${From || 'unknown'}`);
+  res.type('text/xml');
+  res.send(buildWelcomeTwiml());
+});
+
+// GET /api/voice — sanity check en browser
+router.get('/', (_req, res) => {
+  res.type('text/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say language="es-AR">Voice inbound endpoint OK.</Say></Response>`);
+});
+
+// POST /api/voice/menu — maneja la opción elegida por el usuario
+router.post('/menu', (req, res) => {
+  const { Digits, CallSid, From } = req.body || {};
+  console.log(`[voice-menu] CallSid=${CallSid} from=${From || 'unknown'} digit=${Digits}`);
+
+  const text = MENU_MESSAGES[Digits];
+  const menuUrl = `${API_BASE}/voice`;
+
+  res.type('text/xml');
+
+  if (text) {
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="es-AR" voice="Polly.Conchita">${text}</Say>
+  <Gather numDigits="1" action="${API_BASE}/voice/menu" method="POST" timeout="8">
+    <Say language="es-AR" voice="Polly.Conchita">Presioná 1 para volver al menú principal, o colgá cuando quieras.</Say>
+  </Gather>
+  <Say language="es-AR" voice="Polly.Conchita">Gracias por llamar a ProdeCaballito. ¡Hasta la próxima!</Say>
+</Response>`);
+  } else if (Digits === '1' || !Digits) {
+    // Volver al menú (desde el "presioná 1 para volver")
+    res.send(buildWelcomeTwiml());
+  } else {
+    // Opción inválida — repetir menú una vez
+    res.send(buildWelcomeTwiml());
+  }
+});
+
 // POST /api/voice/twiml
 // Called by Twilio when the user answers — returns TwiML that plays the survey
 router.post('/twiml', (req, res) => {
