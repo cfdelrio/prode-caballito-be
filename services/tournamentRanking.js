@@ -18,7 +18,10 @@ const recalculateAllTournamentRankings = async () => {
 exports.recalculateAllTournamentRankings = recalculateAllTournamentRankings;
 const recalculateTournamentRanking = async (tournamentId) => {
     try {
-        // Get all scores for matches in this tournament
+        // REGLA DE NEGOCIO: el ranking de torneo es por planilla individual.
+        // Si un usuario tiene N planillas, aparece N veces en el ranking.
+        // El unique key es (tournament_id, planilla_id), NO (tournament_id, user_id).
+        // Sumar puntos por usuario daría ventaja a quien compra más planillas.
         const betStats = await connection_1.db.query(`
       SELECT
         p.user_id,
@@ -35,18 +38,18 @@ const recalculateTournamentRanking = async (tournamentId) => {
     `, [tournamentId]);
         // Delete existing rankings for this tournament
         await connection_1.db.query('DELETE FROM tournament_rankings WHERE tournament_id = $1', [tournamentId]);
-        // Insert new rankings
+        // Insert new rankings — una fila por planilla
         for (const row of betStats.rows) {
             await connection_1.db.query(`
-        INSERT INTO tournament_rankings (tournament_id, user_id, puntos, total_aciertos, total_exactos)
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (tournament_id, user_id) 
-        DO UPDATE SET 
+        INSERT INTO tournament_rankings (tournament_id, user_id, planilla_id, puntos, total_aciertos, total_exactos)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (tournament_id, planilla_id)
+        DO UPDATE SET
           puntos = EXCLUDED.puntos,
           total_aciertos = EXCLUDED.total_aciertos,
           total_exactos = EXCLUDED.total_exactos,
           updated_at = NOW()
-      `, [tournamentId, row.user_id, row.total_points, row.aciertos, row.exactos]);
+      `, [tournamentId, row.user_id, row.planilla_id, row.total_points, row.aciertos, row.exactos]);
         }
         // Update positions
         await connection_1.db.query(`
