@@ -135,8 +135,11 @@ router.post('/', auth_1.authMiddleware, validation_1.betValidation, async (req, 
             return res.status(404).json({ success: false, error: 'Partido no encontrado' });
         }
         const match = matchResult.rows[0];
-        if (new Date() > new Date(match.time_cutoff) && req.user.rol !== 'admin') {
-            return res.status(400).json({ success: false, error: 'El tiempo para editar pronósticos ha finalizado' });
+        if (req.user.rol !== 'admin') {
+            const check = await checkBetAllowed(match);
+            if (!check.allowed) {
+                return res.status(400).json({ success: false, error: check.error });
+            }
         }
         const existingBet = await connection_1.db.query('SELECT id FROM bets WHERE planilla_id = $1 AND match_id = $2', [planilla_id, match_id]);
         if (existingBet.rows.length > 0) {
@@ -179,8 +182,11 @@ router.post('/score', auth_1.authMiddleware, validation_1.betScoreValidation, as
             return res.status(404).json({ success: false, error: 'Partido no encontrado' });
         }
         const match = matchResult.rows[0];
-        if (new Date() > new Date(match.time_cutoff) && req.user.rol !== 'admin') {
-            return res.status(400).json({ success: false, error: 'El tiempo para editar pronósticos ha finalizado' });
+        if (req.user.rol !== 'admin') {
+            const check = await checkBetAllowed(match);
+            if (!check.allowed) {
+                return res.status(400).json({ success: false, error: check.error });
+            }
         }
         const [local, visitante] = score.split(/[-:]/).map(Number);
         const existingBet = await connection_1.db.query('SELECT id FROM bets WHERE planilla_id = $1 AND match_id = $2', [planilla_id, match_id]);
@@ -237,7 +243,7 @@ router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, re
     try {
         const { id } = req.params;
         const { goles_local, goles_visitante } = req.body;
-        const betResult = await connection_1.db.query(`SELECT b.*, p.user_id, p.precio_pagado, m.time_cutoff
+        const betResult = await connection_1.db.query(`SELECT b.*, p.user_id, p.precio_pagado, m.time_cutoff, m.tournament_id
        FROM bets b
        JOIN planillas p ON b.planilla_id = p.id
        JOIN matches m ON b.match_id = m.id
@@ -252,8 +258,11 @@ router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, re
         if (bet.precio_pagado && req.user.rol !== 'admin') {
             return res.status(400).json({ success: false, error: 'La planilla ya fue cerrada y no se puede modificar' });
         }
-        if (new Date() > new Date(bet.time_cutoff)) {
-            return res.status(400).json({ success: false, error: 'El tiempo para editar ha finalizado' });
+        if (req.user.rol !== 'admin') {
+            const check = await checkBetAllowed(bet);
+            if (!check.allowed) {
+                return res.status(400).json({ success: false, error: check.error });
+            }
         }
         const result = await connection_1.db.query(`UPDATE bets SET goles_local = $1, goles_visitante = $2, updated_at = NOW()
        WHERE id = $3 RETURNING *`, [goles_local, goles_visitante, id]);
@@ -268,7 +277,7 @@ router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, re
 router.delete('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, res) => {
     try {
         const { id } = req.params;
-        const betResult = await connection_1.db.query(`SELECT b.*, p.user_id, p.precio_pagado, m.time_cutoff
+        const betResult = await connection_1.db.query(`SELECT b.*, p.user_id, p.precio_pagado, m.time_cutoff, m.tournament_id
        FROM bets b
        JOIN planillas p ON b.planilla_id = p.id
        JOIN matches m ON b.match_id = m.id
@@ -282,6 +291,12 @@ router.delete('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req,
         }
         if (bet.precio_pagado && req.user.rol !== 'admin') {
             return res.status(400).json({ success: false, error: 'La planilla ya fue cerrada y no se puede modificar' });
+        }
+        if (req.user.rol !== 'admin') {
+            const check = await checkBetAllowed(bet);
+            if (!check.allowed) {
+                return res.status(400).json({ success: false, error: check.error });
+            }
         }
         await connection_1.db.query('DELETE FROM bets WHERE id = $1', [id]);
         await connection_1.db.query(`INSERT INTO audit_log (user_id, action, entity_type, entity_id, ip_address, user_agent) 
@@ -345,19 +360,20 @@ router.delete('/planillas/:planillaId/matches/:matchId', auth_1.authMiddleware, 
         if (planilla.precio_pagado && req.user.rol !== 'admin') {
             return res.status(400).json({ success: false, error: 'La planilla ya fue cerrada y no se puede modificar' });
         }
-        // Verificar que el partido no haya pasado el cutoff
-        const matchResult = await connection_1.db.query('SELECT time_cutoff FROM matches WHERE id = $1', [matchId]);
+        // Verificar que el cierre del torneo (5min antes del primer partido) no haya pasado
+        const matchResult = await connection_1.db.query('SELECT time_cutoff, tournament_id FROM matches WHERE id = $1', [matchId]);
         if (matchResult.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Partido no encontrado' });
         }
         const match = matchResult.rows[0];
-        const cutoffDate = new Date(match.time_cutoff);
-        const now = new Date();
-        if (cutoffDate <= now && req.user.rol === 'usuario') {
-            return res.status(400).json({
-                success: false,
-                error: 'No puedes eliminar pronósticos después del cierre'
-            });
+        if (req.user.rol !== 'admin') {
+            const check = await checkBetAllowed(match);
+            if (!check.allowed) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No puedes eliminar pronósticos después del cierre'
+                });
+            }
         }
         // Eliminar la apuesta
         const deleteResult = await connection_1.db.query('DELETE FROM bets WHERE planilla_id = $1 AND match_id = $2 RETURNING id', [planillaId, matchId]);
