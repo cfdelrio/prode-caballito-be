@@ -186,15 +186,6 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
         cache.invalidatePrefix('ranking:');
         cache.invalidatePrefix('matches:');
 
-        // Notificaciones post-resultado (best-effort, no bloquean la respuesta)
-        setImmediate(() => notifyResult({
-            match,
-            resultLocal: resultado_local,
-            resultVisitante: resultado_visitante,
-            bets: betsResult.rows,
-            prevLeader,
-        }));
-
         // Recalculate tournament ranking if match belongs to tournament
         if (match.tournament_id) {
             await (0, tournamentRanking_1.recalculateTournamentRanking)(match.tournament_id);
@@ -209,11 +200,21 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
                 console.warn('Matchday recalc warning:', mdErr.message);
             }
         }
-        
+
         res.json({
             success: true,
             message: `Resultados publicados. ${betsResult.rows.length} pronósticos calculados.`
         });
+
+        // Notificaciones post-resultado — se ejecutan DESPUÉS de la respuesta pero ANTES
+        // de que Lambda congele el container. setImmediate no es confiable en Lambda.
+        await notifyResult({
+            match,
+            resultLocal: resultado_local,
+            resultVisitante: resultado_visitante,
+            bets: betsResult.rows,
+            prevLeader,
+        }).catch(e => console.error('[result-notif] unhandled:', e.message));
     }
     catch (error) {
         console.error('Publish result error:', error);
