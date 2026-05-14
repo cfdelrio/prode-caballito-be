@@ -33,7 +33,7 @@ const recalculateTournamentRanking = async (tournamentId) => {
       FROM planillas p
       LEFT JOIN scores s ON s.planilla_id = p.id
       LEFT JOIN matches m ON s.match_id = m.id
-      WHERE m.tournament_id = $1 AND m.finished = true
+      WHERE m.tournament_id = $1 AND m.estado = 'finished' AND p.precio_pagado = true
       GROUP BY p.user_id, p.id
     `, [tournamentId]);
         // Delete existing rankings for this tournament
