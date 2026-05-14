@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const connection_1 = require("../db/connection");
 const scoring_1 = require("../services/scoring");
+const tournamentRanking_1 = require("../services/tournamentRanking");
+
 function calculateScore(betHome, betAway, resHome, resAway) {
     const bet = { goles_local: betHome, goles_visitante: betAway };
     const result = { resultado_local: resHome, resultado_visitante: resAway };
@@ -12,9 +14,17 @@ function calculateScore(betHome, betAway, resHome, resAway) {
         detail: JSON.stringify(scoreResult.detalle)
     };
 }
+
 async function recalculateScores() {
     console.log('🏆 Calculando scores...');
-    const matchesResult = await connection_1.db.query('SELECT id, resultado_local, resultado_visitante FROM matches');
+    // Solo matches finalizados con resultado válido
+    const matchesResult = await connection_1.db.query(`
+        SELECT id, resultado_local, resultado_visitante
+        FROM matches
+        WHERE estado = 'finished'
+          AND resultado_local IS NOT NULL
+          AND resultado_visitante IS NOT NULL
+    `);
     let scoreCount = 0;
     for (const match of matchesResult.rows) {
         const betsResult = await connection_1.db.query('SELECT * FROM bets WHERE match_id = $1', [match.id]);
@@ -30,11 +40,14 @@ async function recalculateScores() {
         }
     }
     console.log(`✅ ${scoreCount} scores calculados`);
+
     console.log('📈 Actualizando ranking...');
+    // Lógica idéntica a actualizarRanking() en routes/matches.js
+    // 1. Insertar/actualizar agregados para TODAS las planillas (no filtrar por precio_pagado)
     await connection_1.db.query(`
     INSERT INTO ranking (
-      planilla_id, 
-      puntos_totales, 
+      planilla_id,
+      puntos_totales,
       exactos_count,
       aciertos_celeste,
       aciertos_rojo,
@@ -42,7 +55,7 @@ async function recalculateScores() {
       aciertos_amarillo,
       updated_at
     )
-    SELECT 
+    SELECT
       p.id as planilla_id,
       COALESCE(SUM(s.puntos_obtenidos), 0) as puntos_totales,
       COUNT(s.id) FILTER (WHERE s.puntos_obtenidos >= 3) as exactos_count,
@@ -54,7 +67,6 @@ async function recalculateScores() {
     FROM planillas p
     LEFT JOIN scores s ON p.id = s.planilla_id
     LEFT JOIN matches m ON s.match_id = m.id AND m.estado = 'finished'
-    WHERE p.precio_pagado = true
     GROUP BY p.id
     ON CONFLICT (planilla_id) DO UPDATE SET
       puntos_totales = EXCLUDED.puntos_totales,
@@ -65,21 +77,39 @@ async function recalculateScores() {
       aciertos_amarillo = EXCLUDED.aciertos_amarillo,
       updated_at = NOW()
   `);
+
+    // 2. Limpiar posiciones de planillas no pagadas
+    await connection_1.db.query(`
+    UPDATE ranking r
+    SET position = NULL
+    FROM planillas p
+    WHERE r.planilla_id = p.id AND p.precio_pagado = false
+  `);
+
+    // 3. Calcular posiciones solo para planillas pagadas con criterios de desempate oficiales
     await connection_1.db.query(`
     WITH ranked AS (
-      SELECT id, ROW_NUMBER() OVER (
-        ORDER BY 
-          puntos_totales DESC,
-          aciertos_celeste DESC,
-          aciertos_rojo DESC,
-          aciertos_verde DESC,
-          aciertos_amarillo DESC
+      SELECT r.id, ROW_NUMBER() OVER (
+        ORDER BY
+          r.puntos_totales DESC,
+          r.aciertos_celeste DESC,
+          r.aciertos_rojo DESC,
+          r.aciertos_verde DESC,
+          r.aciertos_amarillo DESC
       ) as position
-      FROM ranking
+      FROM ranking r
+      JOIN planillas p ON r.planilla_id = p.id
+      WHERE p.precio_pagado = true
     )
     UPDATE ranking r SET position = ranked.position FROM ranked WHERE r.id = ranked.id
   `);
     console.log('✅ Ranking actualizado');
+
+    // 4. Recalcular rankings de torneos activos (mismo behavior que matches.js en runtime)
+    console.log('🏟️  Actualizando rankings de torneos...');
+    await (0, tournamentRanking_1.recalculateAllTournamentRankings)();
+    console.log('✅ Tournament rankings actualizados');
+
     process.exit(0);
 }
 recalculateScores().catch(err => {
