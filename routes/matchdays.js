@@ -38,6 +38,57 @@ function openAiPost(path, body) {
   });
 }
 
+// Parsea el value devuelto por pg (puede venir ya parseado si la columna es jsonb)
+function parseConfigValue(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'object') return raw;
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+  return null;
+}
+
+async function uploadImageToS3(imageData) {
+  const AWS = require('aws-sdk');
+  const s3 = new AWS.S3({ region: 'us-east-1' });
+  const key = `winners/${Date.now()}.png`;
+
+  let body;
+  if (typeof imageData === 'string' && imageData.startsWith('data:image/')) {
+    body = Buffer.from(imageData.split(',')[1], 'base64');
+  } else if (typeof imageData === 'string' && imageData.startsWith('http')) {
+    body = await new Promise((resolve, reject) => {
+      https.get(imageData, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          return reject(new Error(`Descarga imagen falló: HTTP ${res.statusCode}`));
+        }
+        const chunks = [];
+        res.on('data', c => chunks.push(c));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+        res.on('error', reject);
+      }).on('error', reject);
+    });
+  } else {
+    throw new Error('imageData debe ser base64 data URI o URL http(s)');
+  }
+
+  await s3.putObject({
+    Bucket: 'prode-uploads-cdelrio',
+    Key: key,
+    Body: body,
+    ContentType: 'image/png',
+  }).promise();
+
+  const url = s3.getSignedUrl('getObject', {
+    Bucket: 'prode-uploads-cdelrio',
+    Key: key,
+    Expires: 10 * 365 * 24 * 3600,
+  });
+  console.log('[winner] Imagen subida a S3:', key);
+  return url;
+}
+
 async function processWinnerNotification(winner, matchday, winnerEmail, allEmails = []) {
   try {
     // 1. Find top scorers with GPT-4o (null = not found)
@@ -65,9 +116,6 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
     ];
     const motivational = MOTIVATIONAL[Math.floor(Math.random() * MOTIVATIONAL.length)];
 
-    // 2. Generate FIFA card — use Responses API with image_generation tool when avatar is available
-    //    so the model can see the actual face and reproduce it on the card.
-    //    Falls back to DALL-E 3 (text-only) when there is no avatar.
     const cardPrompt = `Create a FIFA Ultimate Team player card, ultra high quality digital art style.
 - IMPORTANT: use the face and physical appearance of the person shown in the provided photo as the player's face on the card. Reproduce their likeness faithfully.
 - Golden elite card with shiny gradient background and geometric patterns.
@@ -80,11 +128,10 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
 - A fan in the background holds a banner that reads '¡CAMPEÓN!' and Maradona hands the player a trophy.
 - Ultra-detailed, official FIFA game aesthetic, glossy finish.`;
 
-    let imageUri = null; // will be a URL or a data-URI (base64)
+    let imageUri = null;
 
     if (winner.user_avatar) {
       try {
-        // Responses API: model sees the avatar image and generates the card with the real face
         const respRes = await openAiPost('/v1/responses', {
           model: 'gpt-4o',
           input: [{
@@ -96,7 +143,6 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
           }],
           tools: [{ type: 'image_generation', quality: 'high' }],
         });
-        // Log full response keys to diagnose format issues
         console.log('Responses API keys:', JSON.stringify(Object.keys(respRes || {})));
         if (respRes.error) {
           console.warn('Responses API error:', JSON.stringify(respRes.error));
@@ -115,7 +161,6 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
       }
     }
 
-    // Fallback: DALL-E 3 (no face reference, purely text-driven)
     if (!imageUri) {
       const dallePrompt = `A FIFA Ultimate Team player card, ultra high quality digital art style.
 - Golden elite card with shiny gradient background and geometric patterns.
@@ -143,31 +188,23 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
 
     if (!imageUri) throw new Error('No image generated');
 
-    // ── Persist winner image to carousel config ──────────────────────────────
+    // ── Persistir imagen del ganador en carousel config ──────────────────────
     try {
-      let imageUrl = imageUri;
-      if (imageUri.startsWith('data:image/')) {
-        // Responses API returned base64 → upload to S3 and get signed URL
-        const AWS = require('aws-sdk');
-        const s3 = new AWS.S3({ region: 'us-east-1' });
-        const key = `winners/${Date.now()}.png`;
-        await s3.putObject({
-          Bucket: 'prode-uploads-cdelrio',
-          Key: key,
-          Body: Buffer.from(imageUri.split(',')[1], 'base64'),
-          ContentType: 'image/png',
-        }).promise();
-        imageUrl = s3.getSignedUrl('getObject', {
-          Bucket: 'prode-uploads-cdelrio',
-          Key: key,
-          Expires: 365 * 24 * 3600,
-        });
-        console.log('[winner] Image uploaded to S3:', key);
-      }
-      const entry = { image_url: imageUrl, matchday_label: matchday.name, updated_at: new Date().toISOString() };
+      const imageUrl = await uploadImageToS3(imageUri);
+
+      const entry = {
+        image_url: imageUrl,
+        matchday_label: matchday.name,
+        user_name: winner.user_name,
+        points: winner.points,
+        updated_at: new Date().toISOString(),
+      };
       const existingRes = await connection_1.db.query(`SELECT value FROM config WHERE key = 'ganadores_fechas'`);
       let carouselWinners = [];
-      if (existingRes.rows.length > 0) try { carouselWinners = JSON.parse(existingRes.rows[0].value) } catch {}
+      if (existingRes.rows.length > 0) {
+        const parsed = parseConfigValue(existingRes.rows[0].value);
+        if (Array.isArray(parsed)) carouselWinners = parsed;
+      }
       carouselWinners.push(entry);
       await connection_1.db.query(
         `INSERT INTO config (key, value, updated_at) VALUES ('ganadores_fechas', $1, NOW()) ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
@@ -177,12 +214,11 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
         `INSERT INTO config (key, value, updated_at) VALUES ('ganador_fecha', $1, NOW()) ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
         [JSON.stringify(entry)]
       );
-      console.log('[winner] Image saved to carousel config — total winners:', carouselWinners.length);
+      console.log('[winner] Imagen guardada en carousel config — total ganadores:', carouselWinners.length);
     } catch (saveErr) {
-      console.error('[winner] Error saving to carousel config:', saveErr.message);
+      console.error('[winner] Error guardando en carousel config:', saveErr.message);
     }
 
-    // 3. Send email to all recipients
     const recipients = allEmails.length > 0 ? allEmails : [winnerEmail];
     console.log(`Sending to ${recipients.length} recipients`);
 
@@ -218,7 +254,6 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
 
     console.log('Winner notification complete — all emails sent');
 
-    // WhatsApp broadcast a todos los usuarios con consent
     try {
         const waUsers = await connection_1.db.query(
             `SELECT whatsapp_number FROM users WHERE whatsapp_number IS NOT NULL AND whatsapp_consent = true`
@@ -239,10 +274,8 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
         console.error('Winner WA broadcast error:', waErr.message);
     }
 
-    // Push notification: ganador recibe notificación personal, resto broadcast
     try {
         const { pushToUser, pushToAll } = require('../services/push');
-        // Push al ganador (personal)
         await pushToUser(winner.user_id, {
             title: `🏆 ¡Ganaste ${matchday.name}!`,
             body: `${winner.points} puntos — ¡Sos el crack de la fecha!`,
@@ -250,7 +283,6 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
             icon: '/favicon.svg',
         }).catch(e => console.error('Push winner error:', e.message));
 
-        // Push broadcast al resto (anuncio)
         const scorerLine2 = scorerNames ? ` · ${scorerNames}` : '';
         await pushToAll({
             title: `🏆 ${winner.user_name} ganó ${matchday.name}`,
@@ -268,25 +300,43 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
   }
 }
 
+// ── Timezone helpers ─────────────────────────────────────────────────────────
+// Argentina es UTC-3 sin DST. Usamos Intl para que sea correcto incluso si
+// en algún momento cambia el offset (históricamente ha variado).
+const ARG_TZ = 'America/Argentina/Buenos_Aires';
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+function toArgentinaDateStr(date) {
+  // Retorna 'YYYY-MM-DD' en hora argentina (en-CA da ese formato ISO)
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: ARG_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
 
-/**
- * Auto-create (or find) a matchday record for a given tournament + date.
- * Name is "Fecha DD/MM" unless one already exists.
- */
+function toArgentinaDayMonth(date) {
+  const parts = new Intl.DateTimeFormat('es-AR', {
+    timeZone: ARG_TZ,
+    day: '2-digit',
+    month: '2-digit',
+  }).formatToParts(date);
+  const p = {};
+  for (const { type, value } of parts) p[type] = value;
+  return { day: p.day, month: p.month };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function ensureMatchday(tournamentId, matchDate) {
-  const dateStr = matchDate.toISOString().split('T')[0]; // YYYY-MM-DD
+  const dateStr = toArgentinaDateStr(matchDate);
   const existing = await connection_1.db.query(
     'SELECT * FROM matchdays WHERE tournament_id = $1 AND match_date = $2',
     [tournamentId, dateStr]
   );
   if (existing.rows.length > 0) return existing.rows[0];
 
-  const d = matchDate;
-  const day   = String(d.getUTCDate()).padStart(2, '0');
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const name  = `Fecha ${day}/${month}`;
+  const { day, month } = toArgentinaDayMonth(matchDate);
+  const name = `Fecha ${day}/${month}`;
 
   const res = await connection_1.db.query(
     `INSERT INTO matchdays (tournament_id, name, match_date)
@@ -298,17 +348,11 @@ async function ensureMatchday(tournamentId, matchDate) {
   return res.rows[0];
 }
 
-/**
- * Core recalculation logic for a single matchday.
- * Idempotent — running twice on the same matchday produces the same result.
- */
 async function recalcMatchday(matchdayId) {
-  // 1. Get matchday info
   const mdRes = await connection_1.db.query('SELECT * FROM matchdays WHERE id = $1', [matchdayId]);
   if (mdRes.rows.length === 0) throw new Error('Matchday not found');
   const matchday = mdRes.rows[0];
 
-  // 2. Get all FINISHED matches for this tournament on this date
   const matchesRes = await connection_1.db.query(
     `SELECT m.id, m.resultado_local, m.resultado_visitante
      FROM matches m
@@ -323,7 +367,6 @@ async function recalcMatchday(matchdayId) {
 
   const matchIds = dayMatches.map(m => m.id);
 
-  // 3. Get all bets for those matches, grouped by planilla
   const betsRes = await connection_1.db.query(
     `SELECT b.planilla_id, b.match_id, b.goles_local, b.goles_visitante,
             p.user_id, u.nombre AS user_name, u.foto_url AS user_avatar
@@ -334,11 +377,9 @@ async function recalcMatchday(matchdayId) {
     [matchIds]
   );
 
-  // 4. Build a result map for quick lookup
   const resultMap = {};
   for (const m of dayMatches) resultMap[m.id] = m;
 
-  // 5. Sum points per planilla
   const planillaPoints = {};
   for (const bet of betsRes.rows) {
     const match = resultMap[bet.match_id];
@@ -362,7 +403,6 @@ async function recalcMatchday(matchdayId) {
   const rows = Object.values(planillaPoints);
   if (rows.length === 0) return { matchday, updated: 0 };
 
-  // 6. Sort by points DESC and assign RANK (ties share rank)
   rows.sort((a, b) => b.points - a.points);
   let currentRank = 1;
   for (let i = 0; i < rows.length; i++) {
@@ -371,7 +411,6 @@ async function recalcMatchday(matchdayId) {
     rows[i].is_winner = currentRank === 1;
   }
 
-  // 7. UPSERT all rows into scores_by_matchday (idempotent)
   for (const r of rows) {
     await connection_1.db.query(
       `INSERT INTO scores_by_matchday
@@ -388,11 +427,9 @@ async function recalcMatchday(matchdayId) {
     );
   }
 
-  // 8. Notify all bettors async (fire-and-forget via Lambda self-invocation)
   const winner = rows.find(r => r.is_winner);
   if (winner) {
     try {
-      // Fetch emails for ALL participants + winner in one query
       const allUserIds = rows.map(r => r.user_id);
       const emailsRes = await connection_1.db.query(
         `SELECT id, email FROM users WHERE id = ANY($1::uuid[]) AND email IS NOT NULL AND email != ''`,
@@ -426,12 +463,6 @@ async function recalcMatchday(matchdayId) {
   return { matchday, updated: rows.length };
 }
 
-// ── Routes ────────────────────────────────────────────────────────────────────
-
-/**
- * GET /matchdays?tournament_id=xxx
- * List all matchdays for a tournament, with winner info.
- */
 router.get('/', async (req, res) => {
   try {
     const { tournament_id } = req.query;
@@ -461,10 +492,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-/**
- * GET /matchdays/:id/ranking
- * Full ranking for a specific matchday.
- */
 router.get('/:id/ranking', async (req, res) => {
   try {
     const { id } = req.params;
@@ -487,10 +514,6 @@ router.get('/:id/ranking', async (req, res) => {
   }
 });
 
-/**
- * GET /matchdays/user/:userId?tournament_id=xxx
- * Matchday history + won dates for a user.
- */
 router.get('/user/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
@@ -517,10 +540,6 @@ router.get('/user/:userId', async (req, res) => {
   }
 });
 
-/**
- * GET /matchdays/me?tournament_id=xxx   (requires auth)
- * Matchday history for the authenticated user.
- */
 router.get('/me', auth_1.authMiddleware, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -547,15 +566,10 @@ router.get('/me', auth_1.authMiddleware, async (req, res) => {
   }
 });
 
-/**
- * POST /matchdays/recalculate   (admin only)
- * Body: { tournament_id, match_date } OR { matchday_id }
- * Trigger (re)calculation for a specific date. Idempotent.
- */
 router.post('/recalculate', auth_1.authMiddleware, async (req, res) => {
   try {
     if (req.user.rol !== 'admin') {
-      return res.status(403).json({ success: false, error: 'Admin requerido' });
+      return res.status(400).json({ success: false, error: 'Admin requerido' });
     }
     const { tournament_id, match_date, matchday_id } = req.body;
 
@@ -577,10 +591,6 @@ router.post('/recalculate', auth_1.authMiddleware, async (req, res) => {
   }
 });
 
-/**
- * POST /matchdays/recalculate-all   (admin only)
- * Recalculate all matchdays for a tournament from scratch.
- */
 router.post('/recalculate-all', auth_1.authMiddleware, async (req, res) => {
   try {
     if (req.user.rol !== 'admin') {
@@ -591,7 +601,6 @@ router.post('/recalculate-all', auth_1.authMiddleware, async (req, res) => {
       return res.status(400).json({ success: false, error: 'tournament_id requerido' });
     }
 
-    // Get all distinct dates with finished matches for this tournament
     const datesRes = await connection_1.db.query(
       `SELECT DISTINCT DATE(start_time AT TIME ZONE 'America/Argentina/Buenos_Aires') AS match_date
        FROM matches
@@ -616,14 +625,6 @@ router.post('/recalculate-all', auth_1.authMiddleware, async (req, res) => {
 
 const ALLOWED_EMOJIS = ['👏', '❤️', '🔥', '😮', '😂'];
 
-/**
- * POST /matchdays/:id/react   (auth required)
- * Body: { emoji: '👏' | '❤️' | '🔥' | '😮' | '😂' }
- * - Same emoji as current → remove reaction
- * - Different emoji → switch to new emoji
- * - No current reaction → add
- * Returns { userReaction: string|null, reactions: { emoji: count } }
- */
 router.post('/:id/react', auth_1.authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
@@ -646,20 +647,17 @@ router.post('/:id/react', auth_1.authMiddleware, async (req, res) => {
 
     let userReaction = null;
     if (existing.rows.length > 0 && existing.rows[0].emoji === emoji) {
-      // Same emoji → remove
       await connection_1.db.query(
         'DELETE FROM matchday_reactions WHERE matchday_id = $1 AND user_id = $2',
         [id, userId]
       );
     } else if (existing.rows.length > 0) {
-      // Different emoji → update
       await connection_1.db.query(
         'UPDATE matchday_reactions SET emoji = $3 WHERE matchday_id = $1 AND user_id = $2',
         [id, userId, emoji]
       );
       userReaction = emoji;
     } else {
-      // No reaction → insert
       await connection_1.db.query(
         'INSERT INTO matchday_reactions (matchday_id, user_id, emoji) VALUES ($1, $2, $3) ON CONFLICT (matchday_id, user_id) DO UPDATE SET emoji = $3',
         [id, userId, emoji]
@@ -681,10 +679,6 @@ router.post('/:id/react', auth_1.authMiddleware, async (req, res) => {
   }
 });
 
-/**
- * GET /matchdays/:id/reactions   (optional auth)
- * Returns { reactions: { emoji: count }, userReaction: string|null }
- */
 router.get('/:id/reactions', async (req, res) => {
   try {
     const { id } = req.params;
@@ -721,11 +715,6 @@ router.get('/:id/reactions', async (req, res) => {
   }
 });
 
-/**
- * POST /matchdays/test-email-only   (auth required)
- * Sends a test email with a public image — no OpenAI involved.
- * Use this to verify SES/imagemail works before testing the full card pipeline.
- */
 router.post('/test-email-only', auth_1.authMiddleware, async (req, res) => {
   try {
     const userRes = await connection_1.db.query(
@@ -763,15 +752,6 @@ router.post('/test-email-only', auth_1.authMiddleware, async (req, res) => {
   }
 });
 
-/**
- * POST /matchdays/test-winner-notification   (auth required)
- * Body: { matchday_name?, points?, skip_avatar?, sync? }
- *
- * skip_avatar=true  → force DALL-E text-only branch (~15s, no Responses API)
- * sync=true         → await full pipeline before responding (errors visibles inline)
- *
- * Solo manda email/WhatsApp/push al usuario autenticado — cero riesgo de spam.
- */
 router.post('/test-winner-notification', auth_1.authMiddleware, async (req, res) => {
   try {
     const userRes = await connection_1.db.query(
@@ -824,10 +804,6 @@ router.post('/test-winner-notification', auth_1.authMiddleware, async (req, res)
   }
 });
 
-/**
- * Called from matches.js after publishing a result.
- * Auto-creates the matchday and recalculates it.
- */
 async function recalcMatchdayForMatch(matchId, tournamentId, startTime) {
   const md = await ensureMatchday(tournamentId, new Date(startTime));
   await recalcMatchday(md.id);
