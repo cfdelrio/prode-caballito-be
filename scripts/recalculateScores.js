@@ -30,11 +30,24 @@ async function recalculateScores() {
         }
     }
     console.log(`✅ ${scoreCount} scores calculados`);
+
+    // Limpiar scores huérfanos: rows de scores cuyo match ya no está 'finished'
+    // (admin revirtió el resultado). Si no se borran, el ranking los seguiría
+    // sumando porque el LEFT JOIN preserva la fila aunque m no matchee.
+    const orphanRes = await connection_1.db.query(`
+        DELETE FROM scores WHERE match_id IN (
+            SELECT id FROM matches WHERE estado != 'finished'
+        )
+    `);
+    console.log(`🧹 Scores huérfanos borrados: ${orphanRes.rowCount}`);
+
     console.log('📈 Actualizando ranking...');
+    // FIX: filtrar agregados por m.estado = 'finished' — defensa en profundidad
+    // por si quedan scores huérfanos (LEFT JOIN no filtra el lado s).
     await connection_1.db.query(`
     INSERT INTO ranking (
-      planilla_id, 
-      puntos_totales, 
+      planilla_id,
+      puntos_totales,
       exactos_count,
       aciertos_celeste,
       aciertos_rojo,
@@ -42,18 +55,18 @@ async function recalculateScores() {
       aciertos_amarillo,
       updated_at
     )
-    SELECT 
+    SELECT
       p.id as planilla_id,
-      COALESCE(SUM(s.puntos_obtenidos), 0) as puntos_totales,
-      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos >= 3) as exactos_count,
-      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 4) as aciertos_celeste,
-      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 3) as aciertos_rojo,
-      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 2) as aciertos_verde,
-      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 1) as aciertos_amarillo,
+      COALESCE(SUM(s.puntos_obtenidos) FILTER (WHERE m.estado = 'finished'), 0) as puntos_totales,
+      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos >= 3 AND m.estado = 'finished') as exactos_count,
+      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 4 AND m.estado = 'finished') as aciertos_celeste,
+      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 3 AND m.estado = 'finished') as aciertos_rojo,
+      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 2 AND m.estado = 'finished') as aciertos_verde,
+      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 1 AND m.estado = 'finished') as aciertos_amarillo,
       NOW() as updated_at
     FROM planillas p
     LEFT JOIN scores s ON p.id = s.planilla_id
-    LEFT JOIN matches m ON s.match_id = m.id AND m.estado = 'finished'
+    LEFT JOIN matches m ON s.match_id = m.id
     WHERE p.precio_pagado = true
     GROUP BY p.id
     ON CONFLICT (planilla_id) DO UPDATE SET
