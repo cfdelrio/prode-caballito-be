@@ -43,6 +43,7 @@ app.use('/api/matchdays', routes_1.matchdaysRoutes);
 app.use('/api/imagemail', routes_1.imagemailRoutes);
 app.use('/api/push', routes_1.pushRoutes);
 app.use('/api/admin', routes_1.adminRoutes);
+app.use('/api/voice', routes_1.voiceRoutes);
 app.post('/api/internal/broadcast-whatsapp', authMiddleware, requireAdmin, async (req, res) => {
     try {
         const { message } = req.body;
@@ -97,13 +98,11 @@ const handler = async (event, context) => {
             matchday_label: event.matchdayLabel || 'Ganador de la Fecha',
             updated_at: new Date().toISOString(),
         };
-        // Upsert single latest winner
         await db.query(
             `INSERT INTO config (key, value, updated_at) VALUES ('ganador_fecha', $1, NOW())
              ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
             [JSON.stringify(entry)]
         );
-        // Append to winners array
         const existingRes = await db.query(`SELECT value FROM config WHERE key = 'ganadores_fechas'`);
         let winners = [];
         if (existingRes.rows.length > 0) {
@@ -119,7 +118,7 @@ const handler = async (event, context) => {
         return { statusCode: 200, body: JSON.stringify({ success: true }) };
     }
 
-    // Test: simulate full winner flow for a given user (generates FIFA card + saves to carousel)
+    // Test: simulate full winner flow for a given user
     if (event.source === 'prode.test-winner-flow') {
         const { processWinnerNotification } = require('./routes/matchdays');
         const email = event.email || 'cfdelrio@gmail.com';
@@ -137,8 +136,7 @@ const handler = async (event, context) => {
         return { statusCode: 200, body: JSON.stringify({ success: true }) };
     }
 
-    // EventBridge weekly summary trigger (nuevo diseño aprobado)
-    // Rule cron: 0 12 ? * MON * (every Monday 12:00 UTC = 09:00 Argentina)
+    // EventBridge weekly summary trigger
     if (event.source === 'prode.weekly' || event.source === 'weekly-digest' || event['detail-type'] === 'weekly-digest') {
         const { sendWeeklyEmailBatch } = require('./routes/admin');
         const testEmail = event.testEmail || null;
@@ -148,7 +146,6 @@ const handler = async (event, context) => {
     }
 
     // EventBridge pre-cutoff reminder (every 10 min)
-    // Rule cron: */10 * * * ? *
     if (event.source === 'prode.reminder-cutoff' || event['detail-type'] === 'reminder-cutoff') {
         const { runCutoffReminders } = require('./services/reminderCutoff');
         const result = await runCutoffReminders();
@@ -156,13 +153,25 @@ const handler = async (event, context) => {
         return { statusCode: 200, body: JSON.stringify(result) };
     }
 
+    // EventBridge voice survey trigger
+    // Payload: { source: 'prode.voice-survey', surveyId, question, options, userIds? }
+    // options example: [{ digit: '1', label: 'Argentina' }, { digit: '2', label: 'empate' }, { digit: '3', label: 'Brasil' }]
+    if (event.source === 'prode.voice-survey') {
+        const { runVoiceSurvey } = require('./services/voiceSurvey');
+        const result = await runVoiceSurvey({
+            surveyId: event.surveyId,
+            question:  event.question,
+            options:   event.options || [],
+            userIds:   event.userIds || null,
+        });
+        console.log('[prode.voice-survey] Result:', result);
+        return { statusCode: 200, body: JSON.stringify(result) };
+    }
+
     const response = await serverlessHandler(event, context);
-    // Asegurarse de que los headers CORS estén presentes
     if (!response.headers) {
         response.headers = {};
     }
-    // Solo agregar headers CORS si no están ya presentes
-    // El middleware CORS ya los configura correctamente
     if (!response.headers['Access-Control-Allow-Origin'] && !response.headers['access-control-allow-origin']) {
         response.headers['Access-Control-Allow-Origin'] = event.headers?.origin || event.headers?.Origin || '*';
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS';
