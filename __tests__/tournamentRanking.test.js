@@ -99,6 +99,20 @@ describe('recalculateTournamentRanking', () => {
     expect(insertCall[1]).toContain(15)     // puntos
   })
 
+  // REGRESION GUARD: solo planillas pagadas entran al ranking del torneo.
+  it('el SELECT filtra por precio_pagado = true', async () => {
+    setupQuerySequence(
+      makeBetStats([]),
+      { rows: [] },
+      { rows: [] },
+    )
+
+    await recalculateTournamentRanking('t1')
+
+    const selectCall = mockQuery.mock.calls[0]
+    expect(selectCall[0]).toMatch(/precio_pagado\s*=\s*true/i)
+  })
+
   // REGRESION GUARD: la regla de negocio dice "ranking por planilla, no por usuario".
   // Sumar puntos por usuario daría ventaja a quien compra más planillas.
   it('usuario con 2 planillas genera 2 INSERTs distintos (no se suma ni overwrite)', async () => {
