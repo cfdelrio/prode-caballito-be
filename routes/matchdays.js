@@ -449,6 +449,8 @@ async function recalcMatchday(matchdayId) {
 
       if (!allFinished) {
         console.log(`[matchday] ${dayMatches.length}/${totalMatches} partidos terminados — esperando último resultado para notificar ganador`);
+      } else if (matchday.winner_announced_at) {
+        console.log(`[matchday] Winner ya notificado el ${matchday.winner_announced_at} — skip dedup`);
       } else {
         const allUserIds = rows.map(r => r.user_id);
         const emailsRes = await connection_1.db.query(
@@ -474,6 +476,10 @@ async function recalcMatchday(matchdayId) {
             allEmails,
           }),
         }).promise();
+        await connection_1.db.query(
+          'UPDATE matchdays SET winner_announced_at = NOW() WHERE id = $1',
+          [matchday.id]
+        );
         console.log(`[matchday] Todos los partidos terminados — winner notification invocada async para ${winnerEmail} (${allEmails.length} destinatarios)`);
       }
     } catch (err) {
