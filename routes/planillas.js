@@ -183,6 +183,12 @@ router.delete('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req,
         if (existingResult.rows[0].user_id !== req.user.userId && req.user.rol === 'usuario') {
             return res.status(403).json({ success: false, error: 'No tienes permisos' });
         }
+        const rankingRes = await connection_1.db.query('SELECT id FROM ranking WHERE planilla_id = $1', [id]);
+        if (rankingRes.rows.length > 0) {
+            const rankingIds = rankingRes.rows.map(r => r.id);
+            await connection_1.db.query("DELETE FROM comments WHERE target_type = 'ranking' AND target_id = ANY($1::uuid[])", [rankingIds]);
+        }
+        await connection_1.db.query("DELETE FROM comments WHERE target_type = 'planilla' AND target_id = $1", [id]);
         await connection_1.db.query('DELETE FROM planillas WHERE id = $1', [id]);
         res.json({ success: true, message: 'Planilla eliminada' });
     }
@@ -237,6 +243,12 @@ router.put('/admin/:id', auth_1.authMiddleware, auth_1.requireAdmin, async (req,
 router.delete('/admin/:id', auth_1.authMiddleware, auth_1.requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
+        const rankingRes = await connection_1.db.query('SELECT id FROM ranking WHERE planilla_id = $1', [id]);
+        if (rankingRes.rows.length > 0) {
+            const rankingIds = rankingRes.rows.map(r => r.id);
+            await connection_1.db.query("DELETE FROM comments WHERE target_type = 'ranking' AND target_id = ANY($1::uuid[])", [rankingIds]);
+        }
+        await connection_1.db.query("DELETE FROM comments WHERE target_type = 'planilla' AND target_id = $1", [id]);
         await connection_1.db.query('DELETE FROM planillas WHERE id = $1', [id]);
         res.json({ success: true, message: 'Planilla eliminada' });
     }

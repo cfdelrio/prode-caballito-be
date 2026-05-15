@@ -226,6 +226,7 @@ router.delete('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.u
         const { id } = req.params;
         await connection_1.db.query('DELETE FROM scores WHERE match_id = $1', [id]);
         await connection_1.db.query('DELETE FROM bets WHERE match_id = $1', [id]);
+        await connection_1.db.query("DELETE FROM comments WHERE target_type = 'match' AND target_id = $1", [id]);
         const result = await connection_1.db.query('DELETE FROM matches WHERE id = $1 RETURNING id', [id]);
         if (result.rowCount === 0) {
             return res.status(404).json({ success: false, error: 'Partido no encontrado' });
