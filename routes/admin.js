@@ -177,12 +177,18 @@ router.post('/weekly-email', authMiddleware, requireAdmin, adminWeeklyEmailValid
 });
 
 // POST /api/admin/winner-image
-// Body: { image_url: "...", matchday_label: "Fecha 3" }
+// Body: { image_url: "...", matchday_label: "Fecha 3", user_name: "...", points: 42 }
 router.post('/winner-image', authMiddleware, requireAdmin, adminWinnerImageValidation, async (req, res) => {
     try {
-        const { image_url, matchday_label } = req.body;
+        const { image_url, matchday_label, user_name, points } = req.body;
         if (!image_url) return res.status(400).json({ success: false, error: 'image_url requerida' });
-        const entry = { image_url, matchday_label, updated_at: new Date().toISOString() };
+        const entry = {
+            image_url,
+            ...(matchday_label && { matchday_label }),
+            ...(user_name && { user_name }),
+            ...(points != null && { points: Number(points) }),
+            updated_at: new Date().toISOString(),
+        };
 
         // Upsert single latest winner
         await db.query(`
