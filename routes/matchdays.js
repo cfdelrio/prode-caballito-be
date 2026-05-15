@@ -133,7 +133,7 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
     if (winner.user_avatar) {
       try {
         const respRes = await openAiPost('/v1/responses', {
-          model: 'gpt-4o',
+          model: 'gpt-image-1',
           input: [{
             role: 'user',
             content: [
@@ -177,7 +177,6 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
         n: 1,
         size: '1024x1024',
         quality: 'hd',
-        style: 'vivid',
       });
       if (imageRes.error) {
         console.error('DALL-E error:', JSON.stringify(imageRes.error));
@@ -186,11 +185,13 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
       console.log('DALL-E fallback image URL:', imageUri ? 'OK (URL received)' : 'null');
     }
 
-    if (!imageUri) throw new Error('No image generated');
+    if (!imageUri) {
+      console.warn('[winner] No se generó imagen — el carousel se actualiza sin imagen');
+    }
 
-    // ── Persistir imagen del ganador en carousel config ──────────────────────
+    // ── Persistir ganador en carousel config (con o sin imagen) ─────────────
     try {
-      const imageUrl = await uploadImageToS3(imageUri);
+      const imageUrl = imageUri ? await uploadImageToS3(imageUri) : null;
 
       const entry = {
         image_url: imageUrl,
@@ -205,7 +206,9 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
         const parsed = parseConfigValue(existingRes.rows[0].value);
         if (Array.isArray(parsed)) carouselWinners = parsed;
       }
-      carouselWinners.push(entry);
+      // Reemplazar entrada existente para esta fecha (evitar duplicados)
+      const idx = carouselWinners.findIndex(e => e.matchday_label === matchday.name);
+      if (idx >= 0) carouselWinners[idx] = entry; else carouselWinners.push(entry);
       await connection_1.db.query(
         `INSERT INTO config (key, value, updated_at) VALUES ('ganadores_fechas', $1, NOW()) ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
         [JSON.stringify(carouselWinners)]
@@ -214,7 +217,7 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
         `INSERT INTO config (key, value, updated_at) VALUES ('ganador_fecha', $1, NOW()) ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
         [JSON.stringify(entry)]
       );
-      console.log('[winner] Imagen guardada en carousel config — total ganadores:', carouselWinners.length);
+      console.log('[winner] Ganador guardado en carousel config — total:', carouselWinners.length, '— imagen:', imageUrl ? 'sí' : 'no');
     } catch (saveErr) {
       console.error('[winner] Error guardando en carousel config:', saveErr.message);
     }
@@ -222,35 +225,39 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
     const recipients = allEmails.length > 0 ? allEmails : [winnerEmail];
     console.log(`Sending to ${recipients.length} recipients`);
 
-    function sendImagemail(to, subject, message) {
-      const body = JSON.stringify({ to, uri: imageUri, subject, message });
-      return new Promise((resolve, reject) => {
-        const req = https.request({
-          hostname: process.env.API_HOSTNAME || 't49euho172.execute-api.us-east-1.amazonaws.com',
-          path: '/prod/api/imagemail',
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-          timeout: 60000,
-        }, (res) => { res.resume(); resolve(res.statusCode); });
-        req.on('error', reject);
-        req.on('timeout', () => { req.destroy(); reject(new Error('imagemail timeout')); });
-        req.write(body);
-        req.end();
-      });
-    }
+    if (imageUri) {
+      function sendImagemail(to, subject, message) {
+        const body = JSON.stringify({ to, uri: imageUri, subject, message });
+        return new Promise((resolve, reject) => {
+          const req = https.request({
+            hostname: process.env.API_HOSTNAME || 't49euho172.execute-api.us-east-1.amazonaws.com',
+            path: '/prod/api/imagemail',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+            timeout: 60000,
+          }, (res) => { res.resume(); resolve(res.statusCode); });
+          req.on('error', reject);
+          req.on('timeout', () => { req.destroy(); reject(new Error('imagemail timeout')); });
+          req.write(body);
+          req.end();
+        });
+      }
 
-    await runConcurrent(recipients, async (email) => {
-      const isWinner = email === winnerEmail;
-      const subject = isWinner
-        ? `🏆 ¡Ganaste ${matchday.name}!`
-        : `🏆 ${winner.user_name} ganó ${matchday.name}`;
-      const scorerLine = scorerNames ? `Goleadores de la fecha: ${scorerNames}` : motivational;
-      const message = isWinner
-        ? `¡Felicitaciones ${winner.user_name}! Ganaste con ${winner.points} puntos.\n${scorerLine}`
-        : `${winner.user_name} ganó ${matchday.name} con ${winner.points} puntos.\n${scorerLine}`;
-      const status = await sendImagemail(email, subject, message);
-      console.log(`Email sent to ${email} — status ${status}`);
-    }, 10);
+      await runConcurrent(recipients, async (email) => {
+        const isWinner = email === winnerEmail;
+        const subject = isWinner
+          ? `🏆 ¡Ganaste ${matchday.name}!`
+          : `🏆 ${winner.user_name} ganó ${matchday.name}`;
+        const scorerLine = scorerNames ? `Goleadores de la fecha: ${scorerNames}` : motivational;
+        const message = isWinner
+          ? `¡Felicitaciones ${winner.user_name}! Ganaste con ${winner.points} puntos.\n${scorerLine}`
+          : `${winner.user_name} ganó ${matchday.name} con ${winner.points} puntos.\n${scorerLine}`;
+        const status = await sendImagemail(email, subject, message);
+        console.log(`Email sent to ${email} — status ${status}`);
+      }, 10);
+    } else {
+      console.log('[winner] Sin imagen — emails de card omitidos');
+    }
 
     console.log('Winner notification complete — all emails sent');
 

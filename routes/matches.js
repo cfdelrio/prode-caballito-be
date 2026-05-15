@@ -186,15 +186,6 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
         cache.invalidatePrefix('ranking:');
         cache.invalidatePrefix('matches:');
 
-        // Notificaciones post-resultado (best-effort, no bloquean la respuesta)
-        setImmediate(() => notifyResult({
-            match,
-            resultLocal: resultado_local,
-            resultVisitante: resultado_visitante,
-            bets: betsResult.rows,
-            prevLeader,
-        }));
-
         // Recalculate tournament ranking if match belongs to tournament
         if (match.tournament_id) {
             await (0, tournamentRanking_1.recalculateTournamentRanking)(match.tournament_id);
@@ -209,7 +200,17 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
                 console.warn('Matchday recalc warning:', mdErr.message);
             }
         }
-        
+
+        // Notificaciones ANTES de res.json(): serverless-http congela Lambda en
+        // cuanto se llama res.json(), así que cualquier código posterior nunca ejecuta.
+        await notifyResult({
+            match,
+            resultLocal: resultado_local,
+            resultVisitante: resultado_visitante,
+            bets: betsResult.rows,
+            prevLeader,
+        }).catch(e => console.error('[result-notif] unhandled:', e.message));
+
         res.json({
             success: true,
             message: `Resultados publicados. ${betsResult.rows.length} pronósticos calculados.`
@@ -254,10 +255,13 @@ async function actualizarRanking() {
             email: row.email,
         });
     }
+    // FIX: solo contar scores cuyo match está 'finished'.
+    // Razón: si un match se finaliza y luego se revierte (admin), los scores
+    // huérfanos NO deben sumarse al ranking. El LEFT JOIN previo no filtraba.
     await connection_1.db.query(`
     INSERT INTO ranking (
-      planilla_id, 
-      puntos_totales, 
+      planilla_id,
+      puntos_totales,
       exactos_count,
       aciertos_celeste,
       aciertos_rojo,
@@ -265,18 +269,18 @@ async function actualizarRanking() {
       aciertos_amarillo,
       updated_at
     )
-    SELECT 
+    SELECT
       p.id as planilla_id,
-      COALESCE(SUM(s.puntos_obtenidos), 0) as puntos_totales,
-      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos >= 3) as exactos_count,
-      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 4) as aciertos_celeste,
-      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 3) as aciertos_rojo,
-      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 2) as aciertos_verde,
-      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 1) as aciertos_amarillo,
+      COALESCE(SUM(s.puntos_obtenidos) FILTER (WHERE m.estado = 'finished'), 0) as puntos_totales,
+      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos >= 3 AND m.estado = 'finished') as exactos_count,
+      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 4 AND m.estado = 'finished') as aciertos_celeste,
+      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 3 AND m.estado = 'finished') as aciertos_rojo,
+      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 2 AND m.estado = 'finished') as aciertos_verde,
+      COUNT(s.id) FILTER (WHERE s.puntos_obtenidos = 1 AND m.estado = 'finished') as aciertos_amarillo,
       NOW() as updated_at
     FROM planillas p
     LEFT JOIN scores s ON p.id = s.planilla_id
-    LEFT JOIN matches m ON s.match_id = m.id AND m.estado = 'finished'
+    LEFT JOIN matches m ON s.match_id = m.id
     GROUP BY p.id
     ON CONFLICT (planilla_id) DO UPDATE SET
       puntos_totales = EXCLUDED.puntos_totales,
