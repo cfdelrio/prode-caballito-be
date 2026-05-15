@@ -2,13 +2,27 @@
 const { Router } = require("express");
 const { authMiddleware, requireAdmin } = require("../middleware/auth");
 const { adminTestWhatsappValidation, adminWeeklyEmailValidation, adminWinnerImageValidation, adminRecalcMatchdayValidation, adminSendWelcomeValidation, adminTriggerWinnerValidation } = require("../middleware/validation");
-const { sendWhatsApp } = require("../services/whatsapp");
+const { sendWhatsApp, sendSMS } = require("../services/whatsapp");
 const { db } = require("../db/connection");
 const { sendWeeklyEmail } = require("../services/email");
 const { runValidation } = require("../services/scoreValidator");
 const { runConcurrent } = require("../services/concurrency");
 
 const router = Router();
+
+router.post('/test-sms', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { to, message } = req.body;
+        if (!to || !message) {
+            return res.status(400).json({ success: false, error: 'to y message requeridos' });
+        }
+        const result = await sendSMS({ to, body: message });
+        res.json({ success: true, message: `SMS enviado a ${to}`, data: result });
+    } catch (error) {
+        console.error('[admin] test-sms error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 router.post('/test-whatsapp', authMiddleware, requireAdmin, adminTestWhatsappValidation, async (req, res) => {
     try {
