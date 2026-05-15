@@ -437,31 +437,45 @@ async function recalcMatchday(matchdayId) {
   const winner = rows.find(r => r.is_winner);
   if (winner) {
     try {
-      const allUserIds = rows.map(r => r.user_id);
-      const emailsRes = await connection_1.db.query(
-        `SELECT id, email FROM users WHERE id = ANY($1::uuid[]) AND email IS NOT NULL AND email != ''`,
-        [allUserIds]
+      // Only fire winner notifications when ALL matches of the matchday are finished
+      const totalRes = await connection_1.db.query(
+        `SELECT COUNT(*) AS total FROM matches
+         WHERE tournament_id = $1
+           AND DATE(start_time AT TIME ZONE 'America/Argentina/Buenos_Aires') = $2`,
+        [matchday.tournament_id, matchday.match_date]
       );
-      const emailMap = {};
-      for (const row of emailsRes.rows) emailMap[row.id] = row.email;
+      const totalMatches = parseInt(totalRes.rows[0].total);
+      const allFinished = dayMatches.length === totalMatches && totalMatches > 0;
 
-      const winnerEmail = emailMap[winner.user_id] || '';
-      const allEmails = Object.values(emailMap);
+      if (!allFinished) {
+        console.log(`[matchday] ${dayMatches.length}/${totalMatches} partidos terminados — esperando último resultado para notificar ganador`);
+      } else {
+        const allUserIds = rows.map(r => r.user_id);
+        const emailsRes = await connection_1.db.query(
+          `SELECT id, email FROM users WHERE id = ANY($1::uuid[]) AND email IS NOT NULL AND email != ''`,
+          [allUserIds]
+        );
+        const emailMap = {};
+        for (const row of emailsRes.rows) emailMap[row.id] = row.email;
 
-      const AWS = require('aws-sdk');
-      const lambda = new AWS.Lambda({ region: process.env.AWS_REGION || 'us-east-1' });
-      await lambda.invoke({
-        FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME || 'prode-api',
-        InvocationType: 'Event',
-        Payload: JSON.stringify({
-          source: 'winner-notification',
-          winner: { user_id: winner.user_id, user_name: winner.user_name, user_avatar: winner.user_avatar, points: winner.points },
-          matchday: { id: matchday.id, name: matchday.name, tournament_id: matchday.tournament_id },
-          winnerEmail,
-          allEmails,
-        }),
-      }).promise();
-      console.log(`Winner notification invoked async — winner: ${winnerEmail}, total recipients: ${allEmails.length}`);
+        const winnerEmail = emailMap[winner.user_id] || '';
+        const allEmails = Object.values(emailMap);
+
+        const AWS = require('aws-sdk');
+        const lambda = new AWS.Lambda({ region: process.env.AWS_REGION || 'us-east-1' });
+        await lambda.invoke({
+          FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME || 'prode-api',
+          InvocationType: 'Event',
+          Payload: JSON.stringify({
+            source: 'winner-notification',
+            winner: { user_id: winner.user_id, user_name: winner.user_name, user_avatar: winner.user_avatar, points: winner.points },
+            matchday: { id: matchday.id, name: matchday.name, tournament_id: matchday.tournament_id },
+            winnerEmail,
+            allEmails,
+          }),
+        }).promise();
+        console.log(`[matchday] Todos los partidos terminados — winner notification invocada async para ${winnerEmail} (${allEmails.length} destinatarios)`);
+      }
     } catch (err) {
       console.error('Error preparing winner notification:', err.message);
     }
