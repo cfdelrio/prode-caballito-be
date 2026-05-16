@@ -7,6 +7,7 @@ const { db } = require("../db/connection");
 const { sendWeeklyEmail } = require("../services/email");
 const { runValidation } = require("../services/scoreValidator");
 const { runConcurrent } = require("../services/concurrency");
+const { runCutoffReminders } = require("../services/reminderCutoff");
 
 const router = Router();
 
@@ -349,6 +350,16 @@ router.get('/validate-scores', authMiddleware, requireAdmin, async (req, res) =>
         res.json({ success: true, data: result });
     } catch (error) {
         console.error('[admin/validate-scores]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.post('/jobs/cutoff-reminders', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const result = await runCutoffReminders();
+        res.json({ success: true, data: result });
+    } catch (error) {
+        console.error('[admin/cutoff-reminders]', error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 });

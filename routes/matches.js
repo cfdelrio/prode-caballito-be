@@ -105,6 +105,8 @@ router.put('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matc
         if (oldResult.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Partido no encontrado' });
         }
+        const newStartTime = start_time || oldResult.rows[0].start_time;
+        const calcCutoff = time_cutoff || new Date(new Date(newStartTime).getTime() - 30 * 60 * 1000);
         const result = await connection_1.db.query(`UPDATE matches SET
         home_team = COALESCE($1, home_team),
         away_team = COALESCE($2, away_team),
@@ -112,7 +114,7 @@ router.put('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matc
         away_team_pt = COALESCE($4, away_team_pt),
         start_time = COALESCE($5, start_time),
         halftime_minutes = COALESCE($6, halftime_minutes),
-        time_cutoff = COALESCE($7, time_cutoff),
+        time_cutoff = $7,
         estado = COALESCE($8, estado),
         finished = COALESCE($9, finished),
         tournament_id = COALESCE($10, tournament_id),
@@ -120,7 +122,7 @@ router.put('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matc
         grupo = COALESCE($12, grupo),
         jornada = COALESCE($13, jornada)
        WHERE id = $14
-       RETURNING *`, [home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, time_cutoff, estado, finished, tournament_id, sede, grupo, jornada, id]);
+       RETURNING *`, [home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, calcCutoff, estado, finished, tournament_id, sede, grupo, jornada, id]);
         await connection_1.db.query(`INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent) 
        VALUES ($1, 'match_update', 'matches', $2, $3, $4, $5, $6)`, [req.user.userId, id, JSON.stringify(oldResult.rows[0]), JSON.stringify(result.rows[0]), req.ip, req.headers['user-agent']]);
         res.json({ success: true, data: result.rows[0] });
