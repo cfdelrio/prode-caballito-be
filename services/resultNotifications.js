@@ -46,6 +46,15 @@ async function _notifyNewLeader({ rankingRows, prevLeader, match, resultLocal, r
     const newLeader = rankingRows[0] || null;
     if (!newLeader || !prevLeader || newLeader.user_id === prevLeader.user_id) return;
 
+    await db.query(
+        `INSERT INTO notifications (user_id, type, payload, status, sent_at)
+         VALUES ($1, $2, $3, $4, NOW())`,
+        [newLeader.user_id, 'ranking', JSON.stringify({
+            title: '🔥 ¡Sos el nuevo líder!',
+            body: `Con ${newLeader.puntos_totales} pts estás en el puesto #1`
+        }), 'sent']
+    ).catch(e => console.error('Notification new leader error:', e.message));
+
     await sendNewLeaderEmail({
         userEmail: newLeader.email,
         userName: newLeader.nombre,
@@ -91,6 +100,17 @@ async function _notifyBetResults({ bets, rankingMap, match, resultLocal, resultV
                 { goles_local: bet.goles_local, goles_visitante: bet.goles_visitante },
                 { resultado_local: resultLocal, resultado_visitante: resultVisitante }
             );
+
+            const title = score.puntos > 0 ? '⚽ ¡Obtuviste puntos!' : '⚽ Resultado publicado';
+            const body = score.puntos > 0
+                ? `${match.home_team} ${resultLocal}-${resultVisitante} ${match.away_team}: +${score.puntos}pts`
+                : `${match.home_team} ${resultLocal}-${resultVisitante} ${match.away_team}`;
+
+            await db.query(
+                `INSERT INTO notifications (user_id, match_id, type, payload, status, sent_at)
+                 VALUES ($1, $2, $3, $4, $5, NOW())`,
+                [userId, match.id, 'result', JSON.stringify({ title, body }), 'sent']
+            ).catch(e => console.error(`Notification insert error for ${userId}:`, e.message));
 
             await sendResultEmail({
                 userEmail: userRanking.email,
