@@ -64,6 +64,7 @@ describe('runCutoffReminders', () => {
         rows: [{ user_id: 'u1', match_id: 'm1', home_team: 'ARG', away_team: 'BRA' }],
       })
       .mockResolvedValueOnce({ rows: [{ match_id: 'm1' }] }) // INSERT ... RETURNING
+      .mockResolvedValueOnce({ rows: [] }) // SELECT whatsapp_number query
 
     const out = await runCutoffReminders()
 
@@ -105,6 +106,7 @@ describe('runCutoffReminders', () => {
         ],
       })
       .mockResolvedValueOnce({ rows: [{ match_id: 'm1' }, { match_id: 'm2' }] })
+      .mockResolvedValueOnce({ rows: [] }) // SELECT whatsapp_number query
 
     const out = await runCutoffReminders()
 
@@ -120,6 +122,7 @@ describe('runCutoffReminders', () => {
       .mockResolvedValueOnce({ rows: [{ id: 'm1', home_team: 'A', away_team: 'B', time_cutoff: new Date() }] })
       .mockResolvedValueOnce({ rows: [{ user_id: 'u1', match_id: 'm1', home_team: 'A', away_team: 'B' }] })
       .mockResolvedValueOnce({ rows: [{ match_id: 'm1' }] })
+      .mockResolvedValueOnce({ rows: [] }) // SELECT whatsapp_number query
     pushToUser.mockRejectedValueOnce(new Error('boom'))
 
     const out = await runCutoffReminders()
