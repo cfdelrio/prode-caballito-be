@@ -2,6 +2,7 @@
 
 const { db } = require('../db/connection');
 const { pushToUser } = require('./push');
+const { sendSMS } = require('./whatsapp');
 
 const REMINDER_TYPE = 'cutoff_30min';
 
@@ -98,9 +99,27 @@ async function runCutoffReminders() {
         const firstMatch = missingMatches[0];
         const payload = buildPayload({ pending: freshCount, firstMatch });
 
+        // Push notification
         await pushToUser(userId, payload).catch(err =>
             console.error(`[cutoff-reminder] push failed user=${userId}:`, err.message)
         );
+
+        // SMS notification (if user has whatsapp_number + consent)
+        const userRes = await db.query(
+            `SELECT whatsapp_number, whatsapp_consent FROM users WHERE id = $1`,
+            [userId]
+        );
+        if (userRes.rows.length > 0) {
+            const { whatsapp_number, whatsapp_consent } = userRes.rows[0];
+            if (whatsapp_number && whatsapp_consent) {
+                const smsBody = freshCount === 1
+                    ? `⏰ ${firstMatch.home_team} vs ${firstMatch.away_team} cierra en 30 min — aún no pronosticaste 👉 prodecaballito.com/apuestas`
+                    : `⏰ Te faltan ${freshCount} pronósticos que cierran en 30 min 👉 prodecaballito.com/apuestas`;
+                await sendSMS({ to: whatsapp_number, body: smsBody })
+                    .catch(err => console.error(`[cutoff-reminder] sms failed user=${userId}:`, err.message));
+            }
+        }
+
         notified++;
     }
 
