@@ -49,8 +49,9 @@ function parseConfigValue(raw) {
 }
 
 async function uploadImageToS3(imageData) {
-  const AWS = require('aws-sdk');
-  const s3 = new AWS.S3({ region: 'us-east-1' });
+  const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+  const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+  const s3 = new S3Client({ region: 'us-east-1' });
   const key = `winners/${Date.now()}.png`;
 
   let body;
@@ -73,18 +74,18 @@ async function uploadImageToS3(imageData) {
     throw new Error('imageData debe ser base64 data URI o URL http(s)');
   }
 
-  await s3.putObject({
+  await s3.send(new PutObjectCommand({
     Bucket: 'prode-uploads-cdelrio',
     Key: key,
     Body: body,
     ContentType: 'image/png',
-  }).promise();
+  }));
 
-  const url = s3.getSignedUrl('getObject', {
-    Bucket: 'prode-uploads-cdelrio',
-    Key: key,
-    Expires: 10 * 365 * 24 * 3600,
-  });
+  const url = await getSignedUrl(
+    s3,
+    new GetObjectCommand({ Bucket: 'prode-uploads-cdelrio', Key: key }),
+    { expiresIn: 10 * 365 * 24 * 3600 }
+  );
   console.log('[winner] Imagen subida a S3:', key);
   return url;
 }
@@ -463,19 +464,19 @@ async function recalcMatchday(matchdayId) {
         const winnerEmail = emailMap[winner.user_id] || '';
         const allEmails = Object.values(emailMap);
 
-        const AWS = require('aws-sdk');
-        const lambda = new AWS.Lambda({ region: process.env.AWS_REGION || 'us-east-1' });
-        await lambda.invoke({
+        const { LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda');
+        const lambda = new LambdaClient({ region: process.env.AWS_REGION || 'us-east-1' });
+        await lambda.send(new InvokeCommand({
           FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME || 'prode-api',
           InvocationType: 'Event',
-          Payload: JSON.stringify({
+          Payload: Buffer.from(JSON.stringify({
             source: 'winner-notification',
             winner: { user_id: winner.user_id, user_name: winner.user_name, user_avatar: winner.user_avatar, points: winner.points },
             matchday: { id: matchday.id, name: matchday.name, tournament_id: matchday.tournament_id },
             winnerEmail,
             allEmails,
-          }),
-        }).promise();
+          })),
+        }));
         await connection_1.db.query(
           'UPDATE matchdays SET winner_announced_at = NOW() WHERE id = $1',
           [matchday.id]
