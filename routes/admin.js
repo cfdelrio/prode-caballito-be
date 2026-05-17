@@ -383,5 +383,29 @@ router.get('/upcoming-cutoffs', authMiddleware, requireAdmin, async (req, res) =
     }
 });
 
+router.post('/jobs/backfill-scheduled-jobs', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const result = await db.query(`
+            INSERT INTO scheduled_jobs (match_id, job_type, scheduled_for, status)
+            SELECT id, 'kickoff', start_time, 'pending'
+            FROM matches
+            WHERE estado = 'scheduled' AND start_time > NOW()
+            UNION ALL
+            SELECT id, 'second_half',
+                   start_time + INTERVAL '45 minutes' + (halftime_minutes || ' minutes')::INTERVAL,
+                   'pending'
+            FROM matches
+            WHERE estado = 'scheduled' AND start_time > NOW()
+            ON CONFLICT (match_id, job_type) DO NOTHING
+            RETURNING match_id, job_type, scheduled_for
+        `);
+        console.log(`[admin/backfill] Inserted ${result.rows.length} scheduled_jobs rows`);
+        res.json({ success: true, inserted: result.rows.length, jobs: result.rows });
+    } catch (error) {
+        console.error('[admin/backfill]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 module.exports = router;
 module.exports.sendWeeklyEmailBatch = sendWeeklyEmailBatch;
