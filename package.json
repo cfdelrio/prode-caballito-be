@@ -2,18 +2,16 @@
   "name": "prode-backend",
   "version": "1.0.0",
   "description": "PRODE Mundial 2026 - Backend API",
-  "main": "dist/index.js",
+  "main": "index.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
+    "dev": "node --watch index.js",
+    "start": "node index.js",
     "test": "jest --no-coverage",
     "test:watch": "jest --watch --no-coverage",
     "test:coverage": "jest --coverage",
-    "lint": "eslint src/**/*.ts",
-    "migrate": "node dist/db/migrate.js",
-    "migrate:rollback": "node dist/db/rollback.js",
-    "load-qatar2022": "ts-node src/scripts/loadQatar2022.ts"
+    "migrate": "node db/migrate.js",
+    "migrate:rollback": "node db/rollback.js",
+    "load-qatar2022": "node scripts/loadQatar2022.js"
   },
   "dependencies": {
     "@types/aws-lambda": "^8.10.161",
