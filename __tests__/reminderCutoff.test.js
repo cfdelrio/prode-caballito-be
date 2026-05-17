@@ -6,14 +6,19 @@ jest.mock('../db/connection', () => ({
 jest.mock('../services/push', () => ({
   pushToUser: jest.fn().mockResolvedValue(undefined),
 }))
+jest.mock('../services/whatsapp', () => ({
+  sendSMS: jest.fn().mockResolvedValue(undefined),
+}))
 
 const { db } = require('../db/connection')
 const { pushToUser } = require('../services/push')
+const { sendSMS } = require('../services/whatsapp')
 const { runCutoffReminders, buildPayload, REMINDER_TYPE } = require('../services/reminderCutoff')
 
 beforeEach(() => {
   db.query.mockReset()
   pushToUser.mockClear()
+  sendSMS.mockClear()
 })
 
 describe('buildPayload', () => {
@@ -132,5 +137,58 @@ describe('runCutoffReminders', () => {
 
   it('REMINDER_TYPE es estable', () => {
     expect(REMINDER_TYPE).toBe('cutoff_30min')
+  })
+
+  it('envía SMS si el usuario tiene whatsapp_number y whatsapp_consent', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ id: 'm1', home_team: 'ARG', away_team: 'BRA', time_cutoff: new Date() }] })
+      .mockResolvedValueOnce({ rows: [{ user_id: 'u1', match_id: 'm1', home_team: 'ARG', away_team: 'BRA' }] })
+      .mockResolvedValueOnce({ rows: [{ match_id: 'm1' }] })
+      .mockResolvedValueOnce({ rows: [{ whatsapp_number: '+5491155996222', whatsapp_consent: true }] })
+
+    await runCutoffReminders()
+
+    expect(sendSMS).toHaveBeenCalledTimes(1)
+    expect(sendSMS).toHaveBeenCalledWith(expect.objectContaining({
+      to: '+5491155996222',
+      body: expect.stringContaining('ARG vs BRA'),
+    }))
+  })
+
+  it('no envía SMS si whatsapp_consent es false', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ id: 'm1', home_team: 'ARG', away_team: 'BRA', time_cutoff: new Date() }] })
+      .mockResolvedValueOnce({ rows: [{ user_id: 'u1', match_id: 'm1', home_team: 'ARG', away_team: 'BRA' }] })
+      .mockResolvedValueOnce({ rows: [{ match_id: 'm1' }] })
+      .mockResolvedValueOnce({ rows: [{ whatsapp_number: '+5491155996222', whatsapp_consent: false }] })
+
+    await runCutoffReminders()
+
+    expect(sendSMS).not.toHaveBeenCalled()
+  })
+
+  it('no envía SMS si el usuario no tiene whatsapp_number', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ id: 'm1', home_team: 'ARG', away_team: 'BRA', time_cutoff: new Date() }] })
+      .mockResolvedValueOnce({ rows: [{ user_id: 'u1', match_id: 'm1', home_team: 'ARG', away_team: 'BRA' }] })
+      .mockResolvedValueOnce({ rows: [{ match_id: 'm1' }] })
+      .mockResolvedValueOnce({ rows: [{ whatsapp_number: null, whatsapp_consent: true }] })
+
+    await runCutoffReminders()
+
+    expect(sendSMS).not.toHaveBeenCalled()
+  })
+
+  it('no rompe si sendSMS falla — loggea y sigue', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ id: 'm1', home_team: 'A', away_team: 'B', time_cutoff: new Date() }] })
+      .mockResolvedValueOnce({ rows: [{ user_id: 'u1', match_id: 'm1', home_team: 'A', away_team: 'B' }] })
+      .mockResolvedValueOnce({ rows: [{ match_id: 'm1' }] })
+      .mockResolvedValueOnce({ rows: [{ whatsapp_number: '+5491155996222', whatsapp_consent: true }] })
+    sendSMS.mockRejectedValueOnce(new Error('infobip down'))
+
+    const out = await runCutoffReminders()
+
+    expect(out.users_notified).toBe(1)
   })
 })
