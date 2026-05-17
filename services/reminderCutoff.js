@@ -108,6 +108,7 @@ async function runCutoffReminders() {
             if (insertRes.rows.length === 0) { skipped++; continue; }
 
             const pending = Number(row.missing_count);
+            const minutesLeft = Math.round((cutoffMs - Date.now()) / 60000);
             const firstMatch = { home_team: t.first_home, away_team: t.first_away };
             const payload = buildPayload({ pending, tournamentName: t.tournament_name, firstMatch });
 
@@ -123,8 +124,8 @@ async function runCutoffReminders() {
                 const { whatsapp_number, whatsapp_consent } = userRes.rows[0];
                 if (whatsapp_number && whatsapp_consent) {
                     const smsBody = pending === 1
-                        ? `⏰ ${t.tournament_name}: te falta 1 pronóstico — cargalo antes del cierre 👉 prodecaballito.com/apuestas`
-                        : `⏰ ${t.tournament_name}: te faltan ${pending} pronósticos — cargalos antes del cierre 👉 prodecaballito.com/apuestas`;
+                        ? `⏰ ${t.tournament_name}: te falta 1 pronóstico — tenés ${minutesLeft} min para cargarlo 👉 prodecaballito.com/apuestas`
+                        : `⏰ ${t.tournament_name}: te faltan ${pending} pronósticos — tenés ${minutesLeft} min para cargarlos 👉 prodecaballito.com/apuestas`;
                     await sendSMS({ to: whatsapp_number, body: smsBody })
                         .catch(err => console.error(`[cutoff-reminder] sms failed user=${row.user_id}:`, err.message));
                 }
