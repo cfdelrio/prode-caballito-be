@@ -160,13 +160,7 @@ router.post('/', auth_1.authMiddleware, validation_1.betValidation, async (req, 
 router.post('/score', auth_1.authMiddleware, validation_1.betScoreValidation, async (req, res) => {
     try {
         const { planilla_id, match_id, score, remind_before_minutes } = req.body;
-        console.log('=== BET SCORE REQUEST ===');
-        console.log('user:', req.user?.email, req.user?.userId);
-        console.log('planilla_id:', planilla_id);
-        console.log('match_id:', match_id);
-        console.log('score:', score);
         const planillaResult = await connection_1.db.query('SELECT user_id, precio_pagado FROM planillas WHERE id = $1', [planilla_id]);
-        console.log('planillaResult:', planillaResult.rows);
         if (planillaResult.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Planilla no encontrada' });
         }
