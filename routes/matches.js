@@ -133,6 +133,17 @@ router.put('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matc
         schedulerService.scheduleMatchJobs(result.rows[0]).catch(err =>
             console.error(`[matches] scheduleMatchJobs failed for ${id}:`, err.message)
         );
+        if (start_time && new Date(start_time).getTime() !== new Date(oldResult.rows[0].start_time).getTime()) {
+            connection_1.db.query(`
+                UPDATE bet_reminders
+                SET scheduled_for = $1::timestamptz - (remind_minutes * INTERVAL '1 minute'),
+                    email_sent = false,
+                    sent_at = NULL
+                WHERE match_id = $2
+            `, [result.rows[0].start_time, id]).catch(err =>
+                console.error(`[matches] bet_reminders reschedule failed for ${id}:`, err.message)
+            );
+        }
         res.json({ success: true, data: result.rows[0] });
     }
     catch (error) {
