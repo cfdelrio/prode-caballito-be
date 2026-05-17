@@ -43,6 +43,11 @@ jest.mock('../workers/schedulerService', () => ({
   schedulerService: { processPendingJobs: mockProcessPendingJobs },
 }))
 
+const mockProcessBetReminders = jest.fn().mockResolvedValue({ processed: 0, sent: 0, failed: 0 })
+jest.mock('../services/betReminders', () => ({
+  processBetReminders: mockProcessBetReminders,
+}))
+
 const mockRunCutoffReminders = jest.fn().mockResolvedValue({ matches: 0, users_notified: 0 })
 jest.mock('../services/reminderCutoff', () => ({
   runCutoffReminders: mockRunCutoffReminders,
@@ -59,10 +64,11 @@ const fakeContext = { callbackWaitsForEmptyEventLoop: true }
 describe('Lambda EventBridge handlers', () => {
   beforeEach(() => jest.clearAllMocks())
 
-  it('prode.process-jobs → llama processPendingJobs y retorna 200', async () => {
+  it('prode.process-jobs → llama processPendingJobs y processBetReminders y retorna 200', async () => {
     const res = await handler({ source: 'prode.process-jobs' }, fakeContext)
     expect(res.statusCode).toBe(200)
     expect(mockProcessPendingJobs).toHaveBeenCalledTimes(1)
+    expect(mockProcessBetReminders).toHaveBeenCalledTimes(1)
   })
 
   it('prode.reminder-cutoff → llama runCutoffReminders y retorna 200', async () => {
