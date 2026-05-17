@@ -153,12 +153,14 @@ const handler = async (event, context) => {
         return { statusCode: 200, body: JSON.stringify(result) };
     }
 
-    // EventBridge scheduled jobs processor (kickoff + second_half in-app notifications)
+    // EventBridge scheduled jobs processor (kickoff/second_half + opt-in bet_reminders)
     if (event.source === 'prode.process-jobs') {
         const { schedulerService } = require('./workers/schedulerService');
+        const { processBetReminders } = require('./services/betReminders');
         await schedulerService.processPendingJobs();
-        console.log('[prode.process-jobs] Pending jobs processed');
-        return { statusCode: 200, body: JSON.stringify({ success: true }) };
+        const brResult = await processBetReminders();
+        console.log('[prode.process-jobs] Pending jobs processed. bet_reminders:', brResult);
+        return { statusCode: 200, body: JSON.stringify({ success: true, bet_reminders: brResult }) };
     }
 
     // Ad-hoc query: matches with cutoff in the next N minutes

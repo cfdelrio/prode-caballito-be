@@ -14,8 +14,8 @@ async function getTournamentCutoff(tid) {
         const t = r.rows[0] && r.rows[0].t;
         if (!t) return null;
         const c = await connection_1.db.query('SELECT value FROM config WHERE key = $1', ['tournament_cutoff_minutes_' + tid]);
-        let m = 30;
-        if (c.rows.length > 0) { const v = c.rows[0].value; m = Number(typeof v === 'string' ? JSON.parse(v) : v) || 30; }
+        let m = 5;
+        if (c.rows.length > 0) { const v = c.rows[0].value; m = Number(typeof v === 'string' ? JSON.parse(v) : v) || 5; }
         return new Date(new Date(t).getTime() - m * 60 * 1000);
     });
 }

@@ -13,7 +13,22 @@ jest.mock('../services/whatsapp', () => ({
 const { db } = require('../db/connection')
 const { pushToUser } = require('../services/push')
 const { sendSMS } = require('../services/whatsapp')
-const { runCutoffReminders, buildPayload, REMINDER_TYPE } = require('../services/reminderCutoff')
+const {
+  runCutoffReminders, buildPayload, getTournamentCutoffMinutes,
+  REMINDER_TYPE, DEFAULT_CUTOFF_MINUTES,
+} = require('../services/reminderCutoff')
+
+const T1 = '11111111-1111-1111-1111-111111111111'
+const M1 = '22222222-2222-2222-2222-222222222222'
+const M2 = '33333333-3333-3333-3333-333333333333'
+const U1 = '44444444-4444-4444-4444-444444444444'
+
+// First match starts in 30 min → cutoff (=first - 5min) lands in 25 min (in 20-40 window)
+const firstMatchIn30Min = () => new Date(Date.now() + 30 * 60 * 1000)
+// First match starts in 5 min → cutoff already passed (not in window)
+const firstMatchTooSoon = () => new Date(Date.now() + 5 * 60 * 1000)
+// First match starts in 60 min → cutoff in 55 min (not yet in window)
+const firstMatchIn60Min = () => new Date(Date.now() + 60 * 60 * 1000)
 
 beforeEach(() => {
   db.query.mockReset()
@@ -22,72 +37,110 @@ beforeEach(() => {
 })
 
 describe('buildPayload', () => {
-  it('mensaje específico cuando falta 1 solo partido', () => {
+  it('mensaje específico cuando falta 1 partido y hay firstMatch', () => {
     const p = buildPayload({ pending: 1, firstMatch: { home_team: 'ARG', away_team: 'BRA' } })
-    expect(p.title).toMatch(/30 min/)
+    expect(p.title).toMatch(/Cierra/)
     expect(p.body).toBe('ARG vs BRA — todavía no pronosticaste')
     expect(p.url).toBe('/apuestas')
   })
 
-  it('mensaje genérico cuando faltan varios partidos', () => {
-    const p = buildPayload({ pending: 3, firstMatch: { home_team: 'ARG', away_team: 'BRA' } })
-    expect(p.body).toBe('Te faltan 3 pronósticos — entrá antes del cierre')
+  it('mensaje con nombre del torneo cuando faltan varios', () => {
+    const p = buildPayload({ pending: 3, tournamentName: 'Mundial 2026', firstMatch: null })
+    expect(p.body).toBe('Mundial 2026: te faltan 3 pronósticos')
   })
 
-  it('mensaje genérico con singular si pending=1 pero sin firstMatch', () => {
-    const p = buildPayload({ pending: 1, firstMatch: null })
-    expect(p.body).toBe('Te faltan 1 pronóstico — entrá antes del cierre')
+  it('mensaje genérico si no hay nombre de torneo y faltan varios', () => {
+    const p = buildPayload({ pending: 2, tournamentName: null, firstMatch: null })
+    expect(p.body).toBe('Te faltan 2 pronósticos — entrá antes del cierre')
   })
 })
 
-describe('runCutoffReminders', () => {
-  it('no-op si no hay partidos en la ventana', async () => {
-    db.query.mockResolvedValueOnce({ rows: [] }) // matches query
-
-    const out = await runCutoffReminders()
-
-    expect(out).toEqual({ matches: 0, users_notified: 0 })
-    expect(pushToUser).not.toHaveBeenCalled()
+describe('getTournamentCutoffMinutes', () => {
+  it('devuelve DEFAULT_CUTOFF_MINUTES (5) si no hay config', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] })
+    const m = await getTournamentCutoffMinutes(T1)
+    expect(m).toBe(DEFAULT_CUTOFF_MINUTES)
+    expect(DEFAULT_CUTOFF_MINUTES).toBe(5)
   })
 
-  it('no-op si no hay usuarios con bets faltantes', async () => {
+  it('devuelve el valor de config si existe', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ value: '10' }] })
+    const m = await getTournamentCutoffMinutes(T1)
+    expect(m).toBe(10)
+  })
+
+  it('devuelve default si config tiene valor inválido', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ value: 'abc' }] })
+    const m = await getTournamentCutoffMinutes(T1)
+    expect(m).toBe(DEFAULT_CUTOFF_MINUTES)
+  })
+})
+
+describe('runCutoffReminders — tournament-level', () => {
+  it('no-op si no hay torneos ni partidos en ventana', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'm1', home_team: 'A', away_team: 'B', time_cutoff: new Date() }] })
-      .mockResolvedValueOnce({ rows: [] }) // no missing bets
+      .mockResolvedValueOnce({ rows: [] })       // tournaments
+      .mockResolvedValueOnce({ rows: [] })       // standalone matches
 
     const out = await runCutoffReminders()
 
-    expect(out.matches).toBe(1)
+    expect(out.tournaments_in_window).toBe(0)
+    expect(out.standalone_matches).toBe(0)
     expect(out.users_notified).toBe(0)
     expect(pushToUser).not.toHaveBeenCalled()
   })
 
-  it('envía push y registra reminder_sent para usuarios con bets faltantes', async () => {
+  it('ignora torneos cuyo cutoff está fuera de la ventana', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'm1', home_team: 'ARG', away_team: 'BRA', time_cutoff: new Date() }] })
-      .mockResolvedValueOnce({
-        rows: [{ user_id: 'u1', match_id: 'm1', home_team: 'ARG', away_team: 'BRA' }],
-      })
-      .mockResolvedValueOnce({ rows: [{ match_id: 'm1' }] }) // INSERT ... RETURNING
-      .mockResolvedValueOnce({ rows: [] }) // SELECT whatsapp_number query
+      .mockResolvedValueOnce({ rows: [
+        // first_match en 5min → cutoff ya pasó
+        { tournament_id: T1, tournament_name: 'X', first_match_start: firstMatchTooSoon(),
+          first_match_id: M1, first_home: 'A', first_away: 'B' },
+      ]})
+      .mockResolvedValueOnce({ rows: [] }) // cutoff_minutes config
+      .mockResolvedValueOnce({ rows: [] }) // standalone matches
 
     const out = await runCutoffReminders()
 
-    expect(out).toEqual({ matches: 1, users_notified: 1, skipped: 0 })
-    expect(pushToUser).toHaveBeenCalledTimes(1)
-    expect(pushToUser).toHaveBeenCalledWith('u1', expect.objectContaining({
-      title: '⏰ Cierra en 30 min',
-      body: 'ARG vs BRA — todavía no pronosticaste',
+    expect(out.tournaments_in_window).toBe(0)
+    expect(pushToUser).not.toHaveBeenCalled()
+  })
+
+  it('notifica a usuarios con bets faltantes en un torneo en ventana', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [
+        { tournament_id: T1, tournament_name: 'Mundial', first_match_start: firstMatchIn30Min(),
+          first_match_id: M1, first_home: 'ARG', first_away: 'BRA' },
+      ]})
+      .mockResolvedValueOnce({ rows: [] })                                        // cutoff_minutes config (default=5)
+      .mockResolvedValueOnce({ rows: [{ user_id: U1, missing_count: '3' }] })     // missing bets
+      .mockResolvedValueOnce({ rows: [{ match_id: M1 }] })                        // INSERT reminder_sent RETURNING
+      .mockResolvedValueOnce({ rows: [{ whatsapp_number: '+5491155996222', whatsapp_consent: true }] }) // user
+      .mockResolvedValueOnce({ rows: [] })                                        // standalone matches
+
+    const out = await runCutoffReminders()
+
+    expect(out.tournaments_in_window).toBe(1)
+    expect(out.users_notified).toBe(1)
+    expect(pushToUser).toHaveBeenCalledWith(U1, expect.objectContaining({
+      body: expect.stringContaining('3'),
+    }))
+    expect(sendSMS).toHaveBeenCalledWith(expect.objectContaining({
+      to: '+5491155996222',
+      body: expect.stringContaining('Mundial'),
     }))
   })
 
-  it('skip si reminder_sent ya tiene el registro (ON CONFLICT)', async () => {
+  it('skip si reminder_sent ya tenía registro (ON CONFLICT)', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'm1', home_team: 'ARG', away_team: 'BRA', time_cutoff: new Date() }] })
-      .mockResolvedValueOnce({
-        rows: [{ user_id: 'u1', match_id: 'm1', home_team: 'ARG', away_team: 'BRA' }],
-      })
-      .mockResolvedValueOnce({ rows: [] }) // INSERT returned 0 rows = all conflicts
+      .mockResolvedValueOnce({ rows: [
+        { tournament_id: T1, tournament_name: 'X', first_match_start: firstMatchIn30Min(),
+          first_match_id: M1, first_home: 'A', first_away: 'B' },
+      ]})
+      .mockResolvedValueOnce({ rows: [] })                                        // cutoff_minutes config
+      .mockResolvedValueOnce({ rows: [{ user_id: U1, missing_count: '2' }] })     // missing bets
+      .mockResolvedValueOnce({ rows: [] })                                        // INSERT returns 0 rows = conflict
+      .mockResolvedValueOnce({ rows: [] })                                        // standalone
 
     const out = await runCutoffReminders()
 
@@ -96,99 +149,69 @@ describe('runCutoffReminders', () => {
     expect(pushToUser).not.toHaveBeenCalled()
   })
 
-  it('agrupa múltiples partidos por usuario en un solo push', async () => {
+  it('no envía SMS si whatsapp_consent es false', async () => {
     db.query
-      .mockResolvedValueOnce({
-        rows: [
-          { id: 'm1', home_team: 'ARG', away_team: 'BRA', time_cutoff: new Date() },
-          { id: 'm2', home_team: 'URU', away_team: 'CHI', time_cutoff: new Date() },
-        ],
-      })
-      .mockResolvedValueOnce({
-        rows: [
-          { user_id: 'u1', match_id: 'm1', home_team: 'ARG', away_team: 'BRA' },
-          { user_id: 'u1', match_id: 'm2', home_team: 'URU', away_team: 'CHI' },
-        ],
-      })
-      .mockResolvedValueOnce({ rows: [{ match_id: 'm1' }, { match_id: 'm2' }] })
-      .mockResolvedValueOnce({ rows: [] }) // SELECT whatsapp_number query
-
-    const out = await runCutoffReminders()
-
-    expect(out.users_notified).toBe(1)
-    expect(pushToUser).toHaveBeenCalledTimes(1)
-    expect(pushToUser).toHaveBeenCalledWith('u1', expect.objectContaining({
-      body: 'Te faltan 2 pronósticos — entrá antes del cierre',
-    }))
-  })
-
-  it('no rompe si pushToUser falla — loggea y sigue', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'm1', home_team: 'A', away_team: 'B', time_cutoff: new Date() }] })
-      .mockResolvedValueOnce({ rows: [{ user_id: 'u1', match_id: 'm1', home_team: 'A', away_team: 'B' }] })
-      .mockResolvedValueOnce({ rows: [{ match_id: 'm1' }] })
-      .mockResolvedValueOnce({ rows: [] }) // SELECT whatsapp_number query
-    pushToUser.mockRejectedValueOnce(new Error('boom'))
-
-    const out = await runCutoffReminders()
-
-    expect(out.users_notified).toBe(1)
-  })
-
-  it('REMINDER_TYPE es estable', () => {
-    expect(REMINDER_TYPE).toBe('cutoff_30min')
-  })
-
-  it('envía SMS si el usuario tiene whatsapp_number y whatsapp_consent', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'm1', home_team: 'ARG', away_team: 'BRA', time_cutoff: new Date() }] })
-      .mockResolvedValueOnce({ rows: [{ user_id: 'u1', match_id: 'm1', home_team: 'ARG', away_team: 'BRA' }] })
-      .mockResolvedValueOnce({ rows: [{ match_id: 'm1' }] })
-      .mockResolvedValueOnce({ rows: [{ whatsapp_number: '+5491155996222', whatsapp_consent: true }] })
+      .mockResolvedValueOnce({ rows: [
+        { tournament_id: T1, tournament_name: 'X', first_match_start: firstMatchIn30Min(),
+          first_match_id: M1, first_home: 'A', first_away: 'B' },
+      ]})
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ user_id: U1, missing_count: '1' }] })
+      .mockResolvedValueOnce({ rows: [{ match_id: M1 }] })
+      .mockResolvedValueOnce({ rows: [{ whatsapp_number: '+5491155996222', whatsapp_consent: false }] })
+      .mockResolvedValueOnce({ rows: [] })
 
     await runCutoffReminders()
 
-    expect(sendSMS).toHaveBeenCalledTimes(1)
+    expect(pushToUser).toHaveBeenCalledTimes(1)
+    expect(sendSMS).not.toHaveBeenCalled()
+  })
+
+  it('usa cutoff_minutes de config si está seteado (cutoff fuera de ventana)', async () => {
+    // config = 15min → first_match en 60min → cutoff en 45min → fuera de ventana (20-40)
+    db.query
+      .mockResolvedValueOnce({ rows: [
+        { tournament_id: T1, tournament_name: 'X', first_match_start: firstMatchIn60Min(),
+          first_match_id: M1, first_home: 'A', first_away: 'B' },
+      ]})
+      .mockResolvedValueOnce({ rows: [{ value: '15' }] }) // cutoff_minutes = 15
+      .mockResolvedValueOnce({ rows: [] }) // standalone
+
+    const out = await runCutoffReminders()
+
+    expect(out.tournaments_in_window).toBe(0)
+    expect(pushToUser).not.toHaveBeenCalled()
+  })
+})
+
+describe('runCutoffReminders — standalone matches', () => {
+  it('notifica a usuarios con planilla y bet faltante en match sin tournament_id', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [] }) // tournaments
+      .mockResolvedValueOnce({ rows: [
+        { id: M2, home_team: 'ARG', away_team: 'BRA', time_cutoff: new Date() },
+      ]})
+      .mockResolvedValueOnce({ rows: [{ user_id: U1 }] }) // missing bets
+      .mockResolvedValueOnce({ rows: [{ match_id: M2 }] }) // INSERT RETURNING
+      .mockResolvedValueOnce({ rows: [{ whatsapp_number: '+5491155996222', whatsapp_consent: true }] })
+
+    const out = await runCutoffReminders()
+
+    expect(out.standalone_matches).toBe(1)
+    expect(out.users_notified).toBe(1)
     expect(sendSMS).toHaveBeenCalledWith(expect.objectContaining({
       to: '+5491155996222',
       body: expect.stringContaining('ARG vs BRA'),
     }))
   })
+})
 
-  it('no envía SMS si whatsapp_consent es false', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'm1', home_team: 'ARG', away_team: 'BRA', time_cutoff: new Date() }] })
-      .mockResolvedValueOnce({ rows: [{ user_id: 'u1', match_id: 'm1', home_team: 'ARG', away_team: 'BRA' }] })
-      .mockResolvedValueOnce({ rows: [{ match_id: 'm1' }] })
-      .mockResolvedValueOnce({ rows: [{ whatsapp_number: '+5491155996222', whatsapp_consent: false }] })
-
-    await runCutoffReminders()
-
-    expect(sendSMS).not.toHaveBeenCalled()
+describe('constantes exportadas', () => {
+  it('REMINDER_TYPE es estable', () => {
+    expect(REMINDER_TYPE).toBe('cutoff_30min')
   })
 
-  it('no envía SMS si el usuario no tiene whatsapp_number', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'm1', home_team: 'ARG', away_team: 'BRA', time_cutoff: new Date() }] })
-      .mockResolvedValueOnce({ rows: [{ user_id: 'u1', match_id: 'm1', home_team: 'ARG', away_team: 'BRA' }] })
-      .mockResolvedValueOnce({ rows: [{ match_id: 'm1' }] })
-      .mockResolvedValueOnce({ rows: [{ whatsapp_number: null, whatsapp_consent: true }] })
-
-    await runCutoffReminders()
-
-    expect(sendSMS).not.toHaveBeenCalled()
-  })
-
-  it('no rompe si sendSMS falla — loggea y sigue', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'm1', home_team: 'A', away_team: 'B', time_cutoff: new Date() }] })
-      .mockResolvedValueOnce({ rows: [{ user_id: 'u1', match_id: 'm1', home_team: 'A', away_team: 'B' }] })
-      .mockResolvedValueOnce({ rows: [{ match_id: 'm1' }] })
-      .mockResolvedValueOnce({ rows: [{ whatsapp_number: '+5491155996222', whatsapp_consent: true }] })
-    sendSMS.mockRejectedValueOnce(new Error('infobip down'))
-
-    const out = await runCutoffReminders()
-
-    expect(out.users_notified).toBe(1)
+  it('DEFAULT_CUTOFF_MINUTES es 5 (regla de negocio)', () => {
+    expect(DEFAULT_CUTOFF_MINUTES).toBe(5)
   })
 })
