@@ -40,8 +40,7 @@ exports.corsMiddleware = (0, cors_1.default)({
             callback(null, true);
         }
         else {
-            console.log('Origin not in whitelist:', origin);
-            callback(null, true);
+            callback(new Error(`Origin not allowed by CORS: ${origin}`));
         }
     },
     credentials: true,
