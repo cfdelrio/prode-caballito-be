@@ -88,8 +88,12 @@ router.post('/', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matchV
         const result = await connection_1.db.query(`INSERT INTO matches (home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, time_cutoff, planilla_id, tournament_id, sede, grupo, jornada)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`, [home_team, away_team, home_team_pt || null, away_team_pt || null, start_time, halftime_minutes || 15, cutoffTime, planilla_id || null, tournament_id || null, sede || null, grupo || null, jornada || null]);
-        await connection_1.db.query(`INSERT INTO audit_log (user_id, action, entity_type, entity_id, new_value, ip_address, user_agent) 
+        await connection_1.db.query(`INSERT INTO audit_log (user_id, action, entity_type, entity_id, new_value, ip_address, user_agent)
        VALUES ($1, 'match_create', 'matches', $2, $3, $4, $5)`, [req.user.userId, result.rows[0].id, JSON.stringify(req.body), req.ip, req.headers['user-agent']]);
+        const { schedulerService } = require('../workers/schedulerService');
+        schedulerService.scheduleMatchJobs(result.rows[0]).catch(err =>
+            console.error(`[matches] scheduleMatchJobs failed for ${result.rows[0].id}:`, err.message)
+        );
         res.status(201).json({ success: true, data: result.rows[0] });
     }
     catch (error) {
@@ -123,8 +127,12 @@ router.put('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matc
         jornada = COALESCE($13, jornada)
        WHERE id = $14
        RETURNING *`, [home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, calcCutoff, estado, finished, tournament_id, sede, grupo, jornada, id]);
-        await connection_1.db.query(`INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent) 
+        await connection_1.db.query(`INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent)
        VALUES ($1, 'match_update', 'matches', $2, $3, $4, $5, $6)`, [req.user.userId, id, JSON.stringify(oldResult.rows[0]), JSON.stringify(result.rows[0]), req.ip, req.headers['user-agent']]);
+        const { schedulerService } = require('../workers/schedulerService');
+        schedulerService.scheduleMatchJobs(result.rows[0]).catch(err =>
+            console.error(`[matches] scheduleMatchJobs failed for ${id}:`, err.message)
+        );
         res.json({ success: true, data: result.rows[0] });
     }
     catch (error) {

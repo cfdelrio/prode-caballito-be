@@ -153,6 +153,14 @@ const handler = async (event, context) => {
         return { statusCode: 200, body: JSON.stringify(result) };
     }
 
+    // EventBridge scheduled jobs processor (kickoff + second_half in-app notifications)
+    if (event.source === 'prode.process-jobs') {
+        const { schedulerService } = require('./workers/schedulerService');
+        await schedulerService.processPendingJobs();
+        console.log('[prode.process-jobs] Pending jobs processed');
+        return { statusCode: 200, body: JSON.stringify({ success: true }) };
+    }
+
     // EventBridge voice survey trigger
     // Payload: { source: 'prode.voice-survey', surveyId, question, options, userIds? }
     // options example: [{ digit: '1', label: 'Argentina' }, { digit: '2', label: 'empate' }, { digit: '3', label: 'Brasil' }]
