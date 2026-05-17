@@ -28,13 +28,13 @@ exports.notificationService = {
     },
 };
 async function generarNotificacionKickoff(userId, matchId, homeTeam, awayTeam, type, startTime) {
-    const titulo = type === 'kickoff' ? '¡Comienza el partido!' : '¡Segundo tiempo!';
-    const mensaje = type === 'kickoff'
+    const title = type === 'kickoff' ? '¡Comienza el partido!' : '¡Segundo tiempo!';
+    const body = type === 'kickoff'
         ? `${homeTeam} vs ${awayTeam} está por comenzar. ¡Mucha suerte!`
         : `${homeTeam} vs ${awayTeam} inicia el segundo tiempo. ¡Seguimos!`;
     await exports.notificationService.crearNotificacion(userId, matchId, type, {
-        titulo,
-        mensaje,
+        title,
+        body,
         homeTeam,
         awayTeam,
         startTime: startTime.toISOString(),
@@ -44,13 +44,13 @@ async function generarNotificacionKickoff(userId, matchId, homeTeam, awayTeam, t
 async function generarNotificacionRankingCambio(userId, posicionAnterior, posicionNueva, planillaNombre) {
     const mejora = posicionAnterior > posicionNueva;
     const cambio = Math.abs(posicionAnterior - posicionNueva);
-    const titulo = mejora ? '¡Subiste en el ranking!' : 'Bajaste en el ranking';
-    const mensaje = mejora
+    const title = mejora ? '¡Subiste en el ranking!' : 'Bajaste en el ranking';
+    const body = mejora
         ? `Avanzaste ${cambio} posición${cambio > 1 ? 'es' : ''}. Ahora estás ${posicionNueva}° en "${planillaNombre}"`
         : `Bajaste ${cambio} posición${cambio > 1 ? 'es' : ''}. Ahora estás ${posicionNueva}° en "${planillaNombre}"`;
     await exports.notificationService.crearNotificacion(userId, null, 'ranking_change', {
-        titulo,
-        mensaje,
+        title,
+        body,
         posicionAnterior,
         posicionNueva,
         planillaNombre,
@@ -59,21 +59,21 @@ async function generarNotificacionRankingCambio(userId, posicionAnterior, posici
 }
 async function generarNotificacionNuevoComentario(userId, commentId, authorName, contenido) {
     await exports.notificationService.crearNotificacion(userId, null, 'new_comment', {
-        titulo: `${authorName} comentó`,
-        mensaje: contenido.substring(0, 100),
+        title: `${authorName} comentó`,
+        body: contenido.substring(0, 100),
         commentId,
         authorName,
         icon: 'comment',
     });
 }
 async function generarNotificacionResultado(userId, matchId, homeTeam, awayTeam, resultadoLocal, resultadoVisitante, puntosObtenidos) {
-    const titulo = '¡Resultado publicado!';
-    const mensaje = puntosObtenidos > 0
+    const title = '¡Resultado publicado!';
+    const body = puntosObtenidos > 0
         ? `Obtuviste ${puntosObtenidos} puntos en ${homeTeam} ${resultadoLocal}-${resultadoVisitante} ${awayTeam}`
         : `Se publicaron los resultados de ${homeTeam} vs ${awayTeam}`;
     await exports.notificationService.crearNotificacion(userId, matchId, 'result_published', {
-        titulo,
-        mensaje,
+        title,
+        body,
         homeTeam,
         awayTeam,
         resultadoLocal,
