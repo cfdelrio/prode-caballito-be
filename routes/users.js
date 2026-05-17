@@ -94,11 +94,25 @@ router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, validation_1.u
         if (tema_equipo && !validThemes.includes(tema_equipo)) {
             return res.status(400).json({ success: false, error: 'Tema inválido. Opciones: ' + validThemes.join(', ') });
         }
-        // Validar whatsapp_number si se proporciona
-        if (whatsapp_number !== undefined && whatsapp_number !== null && whatsapp_number !== '') {
-            const clean = whatsapp_number.replace(/\D/g, '');
-            if (clean.length < 7 || clean.length > 15) {
-                return res.status(400).json({ success: false, error: 'Número de WhatsApp inválido' });
+        // Validate and normalize whatsapp_number to E.164 (+[country_code][number])
+        let normalizedPhone = undefined;
+        if (whatsapp_number !== undefined && whatsapp_number !== null) {
+            if (whatsapp_number === '') {
+                normalizedPhone = null;
+            } else {
+                // Strip everything except digits and leading +
+                const withPlus = whatsapp_number.trim().startsWith('+')
+                    ? '+' + whatsapp_number.replace(/\D/g, '')
+                    : whatsapp_number.replace(/\D/g, '');
+                const digits = withPlus.replace(/^\+/, '');
+                // E.164: must start with +, total 7-15 digits, country code means >= 10 digits
+                if (!withPlus.startsWith('+') || digits.length < 10 || digits.length > 15) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Número inválido. Ingresalo en formato internacional: +549XXXXXXXXXX',
+                    });
+                }
+                normalizedPhone = withPlus; // store as +XXXXXXXXXXX
             }
         }
         const result = await connection_1.db.query(`UPDATE users SET
@@ -111,7 +125,7 @@ router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, validation_1.u
        RETURNING id, nombre, email, rol, idioma_pref, tema_equipo, foto_url, whatsapp_number, whatsapp_consent`,
             [nombre, idioma_pref, tema_equipo,
              whatsapp_consent !== undefined ? whatsapp_consent : null,
-             whatsapp_number !== undefined ? (whatsapp_number === '' ? null : whatsapp_number.replace(/\D/g, '')) : null,
+             normalizedPhone !== undefined ? normalizedPhone : null,
              id]);
         res.json({ success: true, data: result.rows[0] });
     }

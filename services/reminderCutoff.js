@@ -40,8 +40,8 @@ async function runCutoffReminders() {
         FROM matches
         WHERE estado = 'scheduled'
           AND time_cutoff IS NOT NULL
-          AND time_cutoff BETWEEN NOW() + INTERVAL '25 minutes'
-                              AND NOW() + INTERVAL '35 minutes'
+          AND time_cutoff BETWEEN NOW() + INTERVAL '20 minutes'
+                              AND NOW() + INTERVAL '40 minutes'
     `);
 
     if (matchesRes.rows.length === 0) {
