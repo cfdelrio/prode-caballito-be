@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.schedulerService = void 0;
 const connection_1 = require("../db/connection");
 const notificationService_1 = require("./notificationService");
+const { pushToUser } = require('../services/push');
+const { sendSMS } = require('../services/whatsapp');
 exports.schedulerService = {
     async scheduleMatchJobs(match) {
         console.log(`Scheduling jobs for match ${match.id}: ${match.home_team} vs ${match.away_team}`);
@@ -52,24 +54,36 @@ exports.schedulerService = {
         for (const job of jobs) {
             try {
                 console.log(`Processing ${job.type} job for match ${job.matchId}`);
-                const subscriptions = await connection_1.db.query(`
-          SELECT s.*, u.id as user_id, u.nombre, u.email
-          FROM subscriptions s
-          JOIN users u ON s.user_id = u.id
-          WHERE s.match_id = $1
-            AND ($2 = 'kickoff' AND s.notify_kickoff = true
-                 OR $2 = 'second_half' AND s.notify_second_half = true)
-        `, [job.matchId, job.type]);
-                for (const sub of subscriptions.rows) {
-                    const channels = sub.channels || ['in_app'];
-                    for (const channel of channels) {
-                        if (channel === 'in_app') {
-                            await (0, notificationService_1.generarNotificacionKickoff)(sub.user_id, job.matchId, job.homeTeam, job.awayTeam, job.type, job.startTime);
-                        }
+                // Notify all users who placed a bet on this match
+                const betters = await connection_1.db.query(`
+          SELECT DISTINCT u.id AS user_id, u.whatsapp_number, u.whatsapp_consent
+          FROM users u
+          JOIN planillas p ON p.user_id = u.id
+          JOIN bets b ON b.planilla_id = p.id AND b.match_id = $1
+        `, [job.matchId]);
+                const label = job.type === 'kickoff' ? '¡Empieza!' : '¡Segundo tiempo!';
+                const smsBody = `⚽ ${label} ${job.homeTeam} vs ${job.awayTeam} 👉 prodecaballito.com`;
+                const pushPayload = {
+                    title: label,
+                    body: `${job.homeTeam} vs ${job.awayTeam}`,
+                    url: '/apuestas',
+                    icon: '/favicon.svg',
+                };
+                for (const user of betters.rows) {
+                    // In-app notification
+                    await (0, notificationService_1.generarNotificacionKickoff)(user.user_id, job.matchId, job.homeTeam, job.awayTeam, job.type, job.startTime)
+                        .catch(err => console.error(`[scheduler] in-app failed user=${user.user_id}:`, err.message));
+                    // Push notification
+                    await pushToUser(user.user_id, pushPayload)
+                        .catch(err => console.error(`[scheduler] push failed user=${user.user_id}:`, err.message));
+                    // SMS if user consented
+                    if (user.whatsapp_number && user.whatsapp_consent) {
+                        await sendSMS({ to: user.whatsapp_number, body: smsBody })
+                            .catch(err => console.error(`[scheduler] sms failed user=${user.user_id}:`, err.message));
                     }
                 }
                 await this.markJobCompleted(job.matchId, job.type);
-                console.log(`Completed ${job.type} job for match ${job.matchId}`);
+                console.log(`[scheduler] Completed ${job.type} job for match ${job.matchId}: ${betters.rows.length} users notified`);
             }
             catch (error) {
                 console.error(`Error processing job for match ${job.matchId}:`, error);
