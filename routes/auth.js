@@ -7,6 +7,8 @@ const validation_1 = require("../middleware/validation");
 const auth_1 = require("../middleware/auth");
 const rateLimit_1 = require("../middleware/rateLimit");
 const email_1 = require("../services/email");
+const { createLogger } = require("../utils/logger");
+const logger = createLogger('auth');
 const router = (0, express_1.Router)();
 router.post('/register', rateLimit_1.authLimiter, validation_1.registerValidation, async (req, res) => {
     try {
@@ -42,7 +44,7 @@ router.post('/register', rateLimit_1.authLimiter, validation_1.registerValidatio
         });
     }
     catch (error) {
-        console.error('Register error:', error);
+        logger.error('Register error', error);
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
@@ -82,7 +84,7 @@ router.post('/login', rateLimit_1.loginLimiter, validation_1.loginValidation, as
         });
     }
     catch (error) {
-        console.error('Login error:', error);
+        logger.error('Login error', error);
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
@@ -113,7 +115,7 @@ router.post('/refresh', async (req, res) => {
         });
     }
     catch (error) {
-        console.error('Refresh error:', error);
+        logger.error('Refresh error', error);
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
@@ -126,7 +128,7 @@ router.post('/logout', auth_1.authMiddleware, async (req, res) => {
         res.json({ success: true, message: 'Sesión cerrada' });
     }
     catch (error) {
-        console.error('Logout error:', error);
+        logger.error('Logout error', error);
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
@@ -168,10 +170,9 @@ router.post('/register-pending', rateLimit_1.authLimiter, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5) 
        RETURNING id, nombre, email`, [nombre, email, hash_pass, verificationCode, codeExpiresAt]);
         const pendingReg = result.rows[0];
-        console.log(`📧 Enviando código de verificación a ${email}: ${verificationCode}`);
         try {
             await (0, email_1.sendVerificationCode)(email, nombre, verificationCode);
-            console.log(`✅ Email enviado exitosamente a ${email}`);
+            logger.info('Verification email sent', { email });
         }
         catch (emailError) {
             console.error('❌ Error sending verification email:', emailError);
@@ -185,14 +186,13 @@ router.post('/register-pending', rateLimit_1.authLimiter, async (req, res) => {
         });
     }
     catch (error) {
-        console.error('Register pending error:', error);
+        logger.error('Register pending error', error);
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
 router.post('/verify-email', rateLimit_1.authLimiter, async (req, res) => {
     try {
         const { pendingId, code } = req.body;
-        console.log('🔍 Verificación recibida:', { pendingId, code, codeLength: code?.length });
         if (!pendingId || !code) {
             return res.status(400).json({ success: false, error: 'pendingId y code son requeridos' });
         }
@@ -203,20 +203,11 @@ router.post('/verify-email', rateLimit_1.authLimiter, async (req, res) => {
             return res.status(404).json({ success: false, error: 'Registro no encontrado o ya completado' });
         }
         const pending = result.rows[0];
-        console.log('📋 Registro encontrado:', {
-            email: pending.email,
-            codeInDB: pending.verification_code,
-            codeReceived: code,
-            expired: new Date() > new Date(pending.code_expires_at)
-        });
         if (new Date() > new Date(pending.code_expires_at)) {
-            console.log('❌ Código expirado');
             return res.status(400).json({ success: false, error: 'Código expirado. Solicita uno nuevo.' });
         }
         const isValidCode = pending.verification_code === code;
-        console.log('🔐 Validación:', { isValidCode, env: process.env.NODE_ENV });
         if (!isValidCode) {
-            console.log('❌ Código inválido - esperado:', pending.verification_code, 'recibido:', code);
             return res.status(400).json({ success: false, error: 'Código inválido' });
         }
         const userResult = await connection_1.db.query(`INSERT INTO users (nombre, email, hash_pass, email_verified, rol) 
@@ -233,7 +224,7 @@ router.post('/verify-email', rateLimit_1.authLimiter, async (req, res) => {
         });
     }
     catch (error) {
-        console.error('Verify email error:', error);
+        logger.error('Verify email error', error);
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
@@ -253,10 +244,9 @@ router.post('/resend-code', rateLimit_1.authLimiter, async (req, res) => {
         await connection_1.db.query(`UPDATE pending_registrations 
        SET verification_code = $1, code_expires_at = $2 
        WHERE id = $3`, [verificationCode, codeExpiresAt, pendingId]);
-        console.log(`📧 Reenviando código a ${pending.email}: ${verificationCode}`);
         try {
             await (0, email_1.sendVerificationCode)(pending.email, pending.nombre, verificationCode);
-            console.log(`✅ Email reenviado exitosamente`);
+            logger.info('Verification code resent', { email: pending.email });
         }
         catch (emailError) {
             console.error('❌ Error sending resend email:', emailError);
@@ -267,7 +257,7 @@ router.post('/resend-code', rateLimit_1.authLimiter, async (req, res) => {
         });
     }
     catch (error) {
-        console.error('Resend code error:', error);
+        logger.error('Resend code error', error);
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
@@ -301,12 +291,11 @@ router.post('/complete-registration', rateLimit_1.authLimiter, async (req, res) 
         await connection_1.db.query(`INSERT INTO audit_log (user_id, action, entity_type, new_value) 
        VALUES ($1, 'complete_registration', 'users', $2)`, [user.id, JSON.stringify({ tema_equipo })]);
         
-        // Enviar email de bienvenida
         try {
             await (0, email_1.sendWelcomeEmail)(user.email, user.nombre);
-            console.log(`✅ Email de bienvenida enviado a ${user.email}`);
+            logger.info('Welcome email sent', { email: user.email });
         } catch (emailError) {
-            console.error('❌ Error enviando email de bienvenida:', emailError);
+            logger.error('Welcome email failed', emailError);
         }
         
         res.json({
@@ -331,7 +320,7 @@ router.post('/complete-registration', rateLimit_1.authLimiter, async (req, res) 
         });
     }
     catch (error) {
-        console.error('Complete registration error:', error);
+        logger.error('Complete registration error', error);
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
@@ -362,7 +351,7 @@ router.post('/forgot-password', rateLimit_1.authLimiter, async (req, res) => {
 
         res.json({ success: true, message: 'Si el email existe, recibirás un código' });
     } catch (error) {
-        console.error('Forgot password error:', error.message, error.stack);
+        logger.error('Forgot password error', error);
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
@@ -396,7 +385,7 @@ router.post('/reset-password', rateLimit_1.authLimiter, async (req, res) => {
 
         res.json({ success: true, message: 'Contraseña actualizada correctamente' });
     } catch (error) {
-        console.error('Reset password error:', error);
+        logger.error('Reset password error', error);
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });

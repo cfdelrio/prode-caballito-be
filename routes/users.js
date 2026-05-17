@@ -9,11 +9,9 @@ const auth_1 = require("../middleware/auth");
 const validation_1 = require("../middleware/validation");
 const rateLimit_1 = require("../middleware/rateLimit");
 const config_1 = require("../config");
-const aws_sdk_1 = __importDefault(require("aws-sdk"));
+const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const router = (0, express_1.Router)();
-const s3 = new aws_sdk_1.default.S3({
-    region: process.env.AWS_REGION || 'us-east-1',
-});
+const s3 = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
 router.get('/by-email', auth_1.authMiddleware, auth_1.requireAdmin, async (req, res) => {
     try {
         const { email } = req.query;
@@ -140,12 +138,12 @@ router.post('/:id/photo', auth_1.authMiddleware, rateLimit_1.uploadLimiter, asyn
             return res.status(400).json({ success: false, error: 'El archivo debe ser menor a 5MB' });
         }
         const key = `avatars/${id}/${Date.now()}-${file.name}`;
-        await s3.upload({
+        await s3.send(new PutObjectCommand({
             Bucket: process.env.S3_BUCKET_UPLOADS,
             Key: key,
             Body: file.data,
             ContentType: file.mimetype,
-        }).promise();
+        }));
         const fotoUrl = `${config_1.config.aws.cdnUrl}/${key}`;
         await connection_1.db.query('UPDATE users SET foto_url = $1 WHERE id = $2', [fotoUrl, id]);
         res.json({ success: true, data: { foto_url: fotoUrl } });
@@ -214,23 +212,20 @@ router.post('/upload-avatar', auth_1.authMiddleware, rateLimit_1.uploadLimiter, 
     try {
         const { image, fileName, contentType } = req.body;
         const userId = req.user.userId;
-        console.log('Upload avatar request:', { userId, fileName, contentType, hasImage: !!image });
         if (!image) {
             return res.status(400).json({ success: false, error: 'No se recibió ninguna imagen' });
         }
         const buffer = Buffer.from(image, 'base64');
         const ext = fileName?.split('.').pop() || 'jpg';
         const key = `avatars/${userId}-${Date.now()}.${ext}`;
-        console.log('Uploading to S3:', { key, bucket: process.env.S3_BUCKET_UPLOADS });
         const bucket = process.env.S3_BUCKET_UPLOADS || 'prode-uploads-cdelrio';
-        await s3.upload({
+        await s3.send(new PutObjectCommand({
             Bucket: bucket,
             Key: key,
             Body: buffer,
             ContentType: contentType || 'image/jpeg',
-        }).promise();
+        }));
         const avatarUrl = `${config_1.config.aws.cdnUrl}/${key}`;
-        console.log('Avatar uploaded:', avatarUrl);
         await connection_1.db.query('UPDATE users SET foto_url = $1 WHERE id = $2', [avatarUrl, userId]);
         res.json({
             success: true,

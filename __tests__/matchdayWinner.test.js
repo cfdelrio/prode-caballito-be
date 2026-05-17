@@ -1,17 +1,15 @@
 'use strict'
 
 const mockQuery = jest.fn()
-const mockLambdaInvoke = jest.fn()
-const mockInvoke = jest.fn().mockReturnValue({ promise: mockLambdaInvoke })
+const mockSend = jest.fn().mockResolvedValue({})
 
 jest.mock('../db/connection', () => ({
   db: { query: mockQuery },
 }))
 
-jest.mock('aws-sdk', () => ({
-  Lambda: jest.fn().mockImplementation(() => ({
-    invoke: mockInvoke,
-  })),
+jest.mock('@aws-sdk/client-lambda', () => ({
+  LambdaClient: jest.fn().mockImplementation(() => ({ send: mockSend })),
+  InvokeCommand: jest.fn().mockImplementation(params => params),
 }))
 
 jest.mock('../services/scoring', () => ({
@@ -49,7 +47,7 @@ function setupSequence(...results) {
 describe('recalcMatchday — winner notification guard', () => {
   beforeEach(() => {
     jest.clearAllMocks()
-    mockLambdaInvoke.mockResolvedValue({})
+    mockSend.mockResolvedValue({})
   })
 
   it('sin partidos terminados → retorna early sin notificación', async () => {
@@ -61,7 +59,7 @@ describe('recalcMatchday — winner notification guard', () => {
     const result = await recalcMatchday('md-1')
 
     expect(result.updated).toBe(0)
-    expect(mockLambdaInvoke).not.toHaveBeenCalled()
+    expect(mockSend).not.toHaveBeenCalled()
     expect(mockQuery).toHaveBeenCalledTimes(2)
   })
 
@@ -76,7 +74,7 @@ describe('recalcMatchday — winner notification guard', () => {
 
     await recalcMatchday('md-1')
 
-    expect(mockLambdaInvoke).not.toHaveBeenCalled()
+    expect(mockSend).not.toHaveBeenCalled()
   })
 
   it('todos los partidos terminados, primera vez → invoca Lambda y setea winner_announced_at', async () => {
@@ -92,7 +90,7 @@ describe('recalcMatchday — winner notification guard', () => {
 
     await recalcMatchday('md-1')
 
-    expect(mockLambdaInvoke).toHaveBeenCalledTimes(1)
+    expect(mockSend).toHaveBeenCalledTimes(1)
 
     // El UPDATE winner_announced_at debe ser la última query
     const lastCall = mockQuery.mock.calls[mockQuery.mock.calls.length - 1]
@@ -112,7 +110,7 @@ describe('recalcMatchday — winner notification guard', () => {
 
     await recalcMatchday('md-1')
 
-    expect(mockLambdaInvoke).not.toHaveBeenCalled()
+    expect(mockSend).not.toHaveBeenCalled()
     // No debe haber UPDATE winner_announced_at
     const updateCall = mockQuery.mock.calls.find(c => /UPDATE matchdays/.test(c[0]))
     expect(updateCall).toBeUndefined()
@@ -131,8 +129,8 @@ describe('recalcMatchday — winner notification guard', () => {
 
     await recalcMatchday('md-1')
 
-    const invokeCall = mockInvoke.mock.calls[0][0]
-    const payload = JSON.parse(invokeCall.Payload)
+    const invokeCall = mockSend.mock.calls[0][0]
+    const payload = JSON.parse(Buffer.from(invokeCall.Payload).toString())
 
     expect(payload.source).toBe('winner-notification')
     expect(payload.winner.user_id).toBe('u-1')
@@ -155,6 +153,6 @@ describe('recalcMatchday — winner notification guard', () => {
     const result = await recalcMatchday('md-1')
 
     expect(result.updated).toBe(0)
-    expect(mockLambdaInvoke).not.toHaveBeenCalled()
+    expect(mockSend).not.toHaveBeenCalled()
   })
 })
