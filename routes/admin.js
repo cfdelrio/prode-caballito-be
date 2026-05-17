@@ -295,6 +295,23 @@ router.post('/jobs/trigger-winner', authMiddleware, requireAdmin, adminTriggerWi
     }
 });
 
+// ── Clear test winner data ───────────────────────────────────────────────────
+
+router.delete('/clear-winners', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        await db.query(`
+            INSERT INTO config (key, value, updated_at, updated_by)
+            VALUES ('ganadores_fechas', '[]', NOW(), $1)
+            ON CONFLICT (key) DO UPDATE SET value = '[]', updated_at = NOW(), updated_by = $1
+        `, [req.user.userId]);
+        await db.query(`DELETE FROM config WHERE key = 'ganador_fecha'`);
+        res.json({ success: true, message: 'Datos de ganadores eliminados' });
+    } catch (error) {
+        console.error('[clear-winners]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // ── Score integrity validation ────────────────────────────────────────────────
 
 router.get('/validate-scores', authMiddleware, requireAdmin, async (req, res) => {
