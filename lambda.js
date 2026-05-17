@@ -161,6 +161,24 @@ const handler = async (event, context) => {
         return { statusCode: 200, body: JSON.stringify({ success: true }) };
     }
 
+    // Ad-hoc query: matches with cutoff in the next N minutes
+    // aws lambda invoke --function-name <fn> --payload '{"source":"prode.upcoming-cutoffs","minutes":60}' out.json && cat out.json
+    if (event.source === 'prode.upcoming-cutoffs') {
+        const minutes = Math.min(event.minutes || 60, 1440);
+        const result = await db.query(`
+            SELECT id, home_team, away_team, estado, time_cutoff, start_time,
+                   ROUND(EXTRACT(EPOCH FROM (time_cutoff - NOW())) / 60) AS min_until_cutoff
+            FROM matches
+            WHERE estado = 'scheduled'
+              AND time_cutoff IS NOT NULL
+              AND time_cutoff BETWEEN NOW() AND NOW() + ($1 || ' minutes')::INTERVAL
+            ORDER BY time_cutoff ASC
+        `, [minutes]);
+        console.log(`[prode.upcoming-cutoffs] ${result.rows.length} matches in next ${minutes} min`);
+        result.rows.forEach(m => console.log(`  ${m.home_team} vs ${m.away_team} — cierra en ${m.min_until_cutoff} min`));
+        return { statusCode: 200, body: JSON.stringify({ count: result.rows.length, window_minutes: minutes, matches: result.rows }) };
+    }
+
     // EventBridge voice survey trigger
     // Payload: { source: 'prode.voice-survey', surveyId, question, options, userIds? }
     // options example: [{ digit: '1', label: 'Argentina' }, { digit: '2', label: 'empate' }, { digit: '3', label: 'Brasil' }]
