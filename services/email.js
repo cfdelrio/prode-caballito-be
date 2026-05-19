@@ -63,7 +63,7 @@ const sendRankingUpdateEmail = async (userEmail, userName, newPosition, previous
           <div class="position">#${newPosition}</div>
           <div class="points">${points} puntos</div>
         </div>
-        <p>Ver todos los resultados en: <a href="https://d2vjb37mnj30m1.cloudfront.net/ranking">PRODE Caballito</a></p>
+        <p>Ver todos los resultados en: <a href="https://prodecaballito.com/ranking">PRODE Caballito</a></p>
         <div class="footer">
           © 2026 PRODE Caballito
         </div>
