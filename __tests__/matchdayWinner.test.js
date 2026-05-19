@@ -16,6 +16,14 @@ jest.mock('../services/scoring', () => ({
   calcularPuntaje: jest.fn().mockReturnValue({ puntos: 3, bonus: false, detalle: {} }),
 }))
 
+jest.mock('../services/push', () => ({ pushToUser: jest.fn().mockResolvedValue(undefined) }))
+jest.mock('../services/email', () => ({
+  sendPostMatchdayEmail: jest.fn().mockResolvedValue(undefined),
+  sendEmail: jest.fn().mockResolvedValue(undefined),
+}))
+jest.mock('../services/whatsapp', () => ({ sendWhatsAppTemplate: jest.fn().mockResolvedValue(undefined) }))
+jest.mock('../services/concurrency', () => ({ runConcurrent: jest.fn().mockResolvedValue(undefined) }))
+
 const { recalcMatchday } = require('../routes/matchdays')
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -48,6 +56,8 @@ describe('recalcMatchday — winner notification guard', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     mockSend.mockResolvedValue({})
+    // Default fallback: _notifyMatchdayClose intermediate queries return safe empty result
+    mockQuery.mockResolvedValue({ rows: [] })
   })
 
   it('sin partidos terminados → retorna early sin notificación', async () => {
@@ -79,23 +89,29 @@ describe('recalcMatchday — winner notification guard', () => {
 
   it('todos los partidos terminados, primera vez → invoca Lambda y setea winner_announced_at', async () => {
     setupSequence(
-      q([MATCHDAY]),                          // SELECT matchday (winner_announced_at: null)
-      q([MATCH]),                             // SELECT finished matches
-      q([BET]),                               // SELECT bets
-      q([]),                                  // INSERT scores_by_matchday
-      q([{ total: '1' }]),                   // COUNT total matches → 1, igual a finished
-      q([{ id: 'u-1', email: 'cacho@test.com' }]), // SELECT emails
-      q([]),                                  // UPDATE winner_announced_at
+      q([MATCHDAY]),                                        // 1. SELECT matchday
+      q([MATCH]),                                           // 2. SELECT finished matches
+      q([BET]),                                             // 3. SELECT bets
+      q([]),                                                // 4. INSERT scores_by_matchday
+      q([{ total: '1' }]),                                  // 5. COUNT total → allFinished
+      // _notifyMatchdayClose queries (5 queries, no record/streak for this scenario):
+      q([]),                                                // 6. SELECT emails (post-matchday)
+      q([]),                                                // 7. SELECT ranking positions
+      q([]),                                                // 8. INSERT notifications (summary)
+      q([{ max_pts: null }]),                               // 9. SELECT MAX record → no record
+      q([]),                                                // 10. SELECT streak scores → empty
+      // Winner notification path:
+      q([{ id: 'u-1', email: 'cacho@test.com' }]),          // 11. SELECT emails for winner
+      q([]),                                                // 12. UPDATE winner_announced_at
     )
 
     await recalcMatchday('md-1')
 
     expect(mockSend).toHaveBeenCalledTimes(1)
 
-    // El UPDATE winner_announced_at debe ser la última query
-    const lastCall = mockQuery.mock.calls[mockQuery.mock.calls.length - 1]
-    expect(lastCall[0]).toMatch(/UPDATE matchdays SET winner_announced_at/i)
-    expect(lastCall[1]).toContain('md-1')
+    const updateCall = mockQuery.mock.calls.find(c => /UPDATE matchdays SET winner_announced_at/i.test(c[0]))
+    expect(updateCall).toBeDefined()
+    expect(updateCall[1]).toContain('md-1')
   })
 
   it('todos terminados, winner_announced_at ya seteado → skip dedup, no invoca Lambda', async () => {
@@ -121,10 +137,17 @@ describe('recalcMatchday — winner notification guard', () => {
       q([MATCHDAY]),
       q([MATCH]),
       q([BET]),
-      q([]),
-      q([{ total: '1' }]),
-      q([{ id: 'u-1', email: 'cacho@test.com' }]),
-      q([]),
+      q([]),                                          // INSERT scores_by_matchday
+      q([{ total: '1' }]),                            // COUNT total
+      // _notifyMatchdayClose:
+      q([]),                                          // SELECT emails (post-matchday)
+      q([]),                                          // SELECT ranking
+      q([]),                                          // INSERT summary notification
+      q([{ max_pts: null }]),                         // SELECT MAX record
+      q([]),                                          // SELECT streak
+      // Winner path:
+      q([{ id: 'u-1', email: 'cacho@test.com' }]),   // SELECT emails for winner
+      q([]),                                          // UPDATE winner_announced_at
     )
 
     await recalcMatchday('md-1')
