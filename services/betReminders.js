@@ -39,10 +39,12 @@ async function processBetReminders() {
             const score = hasBet ? `${r.goles_local}-${r.goles_visitante}` : null;
 
             const payload = {
-                title: `⚽ Empieza en ${r.remind_minutes} min`,
+                title: hasBet
+                    ? `⚽ En ${r.remind_minutes} min — ${r.home_team} vs ${r.away_team}`
+                    : `⚽ Ojo que empieza en ${r.remind_minutes} min`,
                 body: hasBet
-                    ? `${r.home_team} vs ${r.away_team} — tu pronóstico: ${score}`
-                    : `${r.home_team} vs ${r.away_team}`,
+                    ? `Tu pronóstico: ${score} 🤞 ¡Que entre!`
+                    : `${r.home_team} vs ${r.away_team} — todavía podés apostar.`,
                 url: '/apuestas',
                 icon: '/favicon.svg',
             };
@@ -53,8 +55,8 @@ async function processBetReminders() {
 
             if (r.whatsapp_number && r.whatsapp_consent) {
                 const body = hasBet
-                    ? `⚽ ${r.home_team} vs ${r.away_team} empieza en ${r.remind_minutes} min — tu pronóstico: ${score} 🤞 prodecaballito.com`
-                    : `⚽ ${r.home_team} vs ${r.away_team} empieza en ${r.remind_minutes} min 👉 prodecaballito.com`;
+                    ? `⚽ En ${r.remind_minutes} min — ${r.home_team} vs ${r.away_team} | Tu pronóstico: ${score} 🤞 prodecaballito.com`
+                    : `⚽ ${r.home_team} vs ${r.away_team} empieza en ${r.remind_minutes} min — todavía podés apostar 👉 prodecaballito.com/apuestas`;
                 await sendSMSWithRetry({ to: r.whatsapp_number, body }).catch(err =>
                     console.error(`[bet-reminders] sms failed (after retries) user=${r.user_id} match=${r.match_id}:`, err.message)
                 );

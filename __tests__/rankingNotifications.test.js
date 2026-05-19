@@ -64,21 +64,17 @@ describe('"Te pasaron en el ranking"', () => {
 
     await actualizarRanking(MATCH_ID)
 
-    // USER_A should receive "te pasaron" notification
-    expect(pushToUser).toHaveBeenCalledWith(
-      USER_A,
-      expect.objectContaining({ title: '⚠️ Te pasaron en el ranking' })
-    )
-    // USER_B should NOT receive "te pasaron" (they moved up)
-    const pushCalls = pushToUser.mock.calls.map(c => c[0])
+    // USER_A should receive "te pasaron" notification (dynamic title with overtaker's name)
     const pasaronCalls = pushToUser.mock.calls.filter(c =>
-      c[1]?.title === '⚠️ Te pasaron en el ranking'
+      typeof c[1]?.title === 'string' && c[1].title.includes('te bajó del')
     )
     expect(pasaronCalls.length).toBe(1)
     expect(pasaronCalls[0][0]).toBe(USER_A)
+    // USER_B should NOT receive "te pasaron" (they moved up)
+    expect(pasaronCalls.some(c => c[0] === USER_B)).toBe(false)
   })
 
-  it('el cuerpo del mensaje menciona quién te pasó', async () => {
+  it('el cuerpo del mensaje menciona quién te pasó y la posición', async () => {
     const prevRows = [
       { planilla_id: PL_A, position: 2, puntos_totales: 8,  user_id: USER_A, nombre: 'Ana', email: 'a@t.com' },
       { planilla_id: PL_B, position: 3, puntos_totales: 6,  user_id: USER_B, nombre: 'Bob', email: 'b@t.com' },
@@ -92,10 +88,10 @@ describe('"Te pasaron en el ranking"', () => {
     await actualizarRanking(MATCH_ID)
 
     const call = pushToUser.mock.calls.find(c =>
-      c[0] === USER_A && c[1]?.title === '⚠️ Te pasaron en el ranking'
+      c[0] === USER_A && typeof c[1]?.title === 'string' && c[1].title.includes('te bajó del')
     )
     expect(call).toBeDefined()
-    expect(call[1].body).toContain('Bob')
+    expect(call[1].title).toContain('Bob')
     expect(call[1].body).toContain('#3')
   })
 
@@ -111,7 +107,7 @@ describe('"Te pasaron en el ranking"', () => {
     await actualizarRanking(MATCH_ID)
 
     const pasaronCalls = pushToUser.mock.calls.filter(c =>
-      c[1]?.title === '⚠️ Te pasaron en el ranking'
+      typeof c[1]?.title === 'string' && c[1].title.includes('te bajó del')
     )
     expect(pasaronCalls).toHaveLength(0)
   })
@@ -150,11 +146,14 @@ describe('"Cerca del podio"', () => {
     await actualizarRanking(MATCH_ID)
 
     const nearCalls = pushToUser.mock.calls.filter(c =>
-      c[1]?.title === '🎯 Cerca del podio'
+      typeof c[1]?.title === 'string' && (
+        c[1].title.includes('podio') || c[1].title.includes('Zona de podio')
+      )
     )
     expect(nearCalls).toHaveLength(1)
     expect(nearCalls[0][0]).toBe(USER_C)
-    expect(nearCalls[0][1].body).toContain('2 pts') // gap = 17 - 15 = 2
+    // gap = 17 - 15 = 2 pts → title: '🎯 A 2 pts del podio'
+    expect(nearCalls[0][1].title).toContain('2 pts')
   })
 
   it('no notifica cuando el gap es >5 pts', async () => {

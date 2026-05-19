@@ -63,7 +63,7 @@ const sendRankingUpdateEmail = async (userEmail, userName, newPosition, previous
           <div class="position">#${newPosition}</div>
           <div class="points">${points} puntos</div>
         </div>
-        <p>Ver todos los resultados en: <a href="https://d2vjb37mnj30m1.cloudfront.net/ranking">PRODE Caballito</a></p>
+        <p>Ver todos los resultados en: <a href="https://prodecaballito.com/ranking">PRODE Caballito</a></p>
         <div class="footer">
           © 2026 PRODE Caballito
         </div>
@@ -978,4 +978,73 @@ const sendPostMatchdayEmail = async ({ userEmail, userName, matchdayName, points
     });
 };
 exports.sendPostMatchdayEmail = sendPostMatchdayEmail;
+
+const sendPlanillaCierreEmail = async ({ userEmail, userName, planillaNombre, torneoName, matches }) => {
+    const totalMatches = matches.length;
+    const completedBets = matches.filter(m => m.goles_local != null && m.goles_visitante != null).length;
+    const isComplete = completedBets === totalMatches;
+
+    const subject = isComplete
+        ? `✅ Tu planilla "${planillaNombre}" está lista para ${torneoName}`
+        : `⚠️ Tu planilla "${planillaNombre}" cerró con ${totalMatches - completedBets} pronóstico${totalMatches - completedBets === 1 ? '' : 's'} sin cargar`;
+
+    const rows = matches.map(m => {
+        const bet = m.goles_local != null && m.goles_visitante != null
+            ? `${m.goles_local}-${m.goles_visitante}`
+            : '—';
+        return `<tr style="border-bottom:1px solid #E5E7EB;">
+          <td style="padding:10px 12px;font-size:13px;color:#111827;font-family:Arial,sans-serif;">${m.home_team} vs ${m.away_team}</td>
+          <td style="padding:10px 12px;font-size:13px;text-align:center;font-weight:bold;color:${bet === '—' ? '#9CA3AF' : '#001A4B'};font-family:Arial,sans-serif;">${bet}</td>
+        </tr>`;
+    }).join('');
+
+    const headerColor = isComplete ? '#166534' : '#92400E';
+    const headerBg = isComplete ? '#DCFCE7' : '#FEF3C7';
+    const headerEmoji = isComplete ? '✅' : '⚠️';
+    const headerLabel = isComplete ? 'PLANILLA CONFIRMADA' : 'PLANILLA CON PRONÓSTICOS FALTANTES';
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background-color:#F1F5F9;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr><td align="center" style="padding:32px 16px;">
+    <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);">
+      <tr><td style="background-color:#001A4B;padding:28px 32px 20px;text-align:center;">
+        <p style="margin:0;font-size:22px;font-weight:900;color:#FFFFFF;font-family:Arial,sans-serif;">⚽ PRODE Caballito</p>
+        <p style="margin:6px 0 0;font-size:13px;color:#93C5FD;font-family:Arial,sans-serif;">${torneoName}</p>
+      </td></tr>
+      <tr><td style="background-color:${headerBg};padding:16px 32px;text-align:center;">
+        <p style="margin:0;font-size:15px;font-weight:900;color:${headerColor};font-family:Arial,sans-serif;">${headerEmoji} ${headerLabel}</p>
+        <p style="margin:4px 0 0;font-size:13px;color:${headerColor};font-family:Arial,sans-serif;">Cargaste ${completedBets} de ${totalMatches} pronósticos</p>
+      </td></tr>
+      <tr><td style="background-color:#FFFFFF;padding:28px 32px;">
+        <p style="margin:0 0 16px;font-size:16px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;">Hola ${userName} 👋</p>
+        <p style="margin:0 0 20px;font-size:14px;color:#374151;font-family:Arial,sans-serif;line-height:1.6;">
+          ${isComplete
+            ? `Tu planilla <strong>"${planillaNombre}"</strong> está lista. Este es tu resumen de pronósticos para ${torneoName}.`
+            : `El torneo cerró. Te dejamos el resumen de tu planilla <strong>"${planillaNombre}"</strong>. Los pronósticos con <strong>—</strong> no estaban cargados al cierre.`}
+        </p>
+        <table width="100%" cellpadding="0" cellspacing="0" border="1" style="border-collapse:collapse;border-color:#E5E7EB;border-radius:8px;overflow:hidden;">
+          <tr style="background-color:#F9FAFB;">
+            <th style="padding:10px 12px;font-size:12px;font-weight:bold;color:#6B7280;text-align:left;font-family:Arial,sans-serif;">PARTIDO</th>
+            <th style="padding:10px 12px;font-size:12px;font-weight:bold;color:#6B7280;text-align:center;font-family:Arial,sans-serif;">TU PRONÓSTICO</th>
+          </tr>
+          ${rows}
+        </table>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;">
+          <tr><td align="center">
+            <a href="https://prodecaballito.com/planillas" style="display:inline-block;background-color:#001A4B;color:#FFFFFF;text-decoration:none;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;padding:14px 36px;border-radius:50px;">Ver mi planilla →</a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="background-color:#F8FAFC;padding:16px 32px;text-align:center;">
+        <p style="margin:0;font-size:11px;color:#9CA3AF;font-family:Arial,sans-serif;">prodecaballito.com · Este es tu resumen de planilla al cierre del torneo</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+
+    await sendEmail({ to: userEmail, subject, html });
+};
+exports.sendPlanillaCierreEmail = sendPlanillaCierreEmail;
 //# sourceMappingURL=email.js.map

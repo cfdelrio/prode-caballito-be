@@ -64,7 +64,8 @@ describe('runPaymentReminders', () => {
     expect(result.users_notified).toBe(1)
     expect(pushToUser).toHaveBeenCalledTimes(1)
     expect(pushToUser).toHaveBeenCalledWith(USER_A, expect.objectContaining({
-      title: '💸 Planilla sin pagar',
+      title: expect.stringContaining('sin pagar'),
+      body: expect.stringContaining('Sin pago no sumás puntos'),
     }))
     expect(sendEmail).toHaveBeenCalledTimes(1)
     expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({

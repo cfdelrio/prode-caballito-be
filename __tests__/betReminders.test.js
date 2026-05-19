@@ -53,7 +53,7 @@ describe('processBetReminders', () => {
     expect(out.sent).toBe(1)
     expect(pushToUser).toHaveBeenCalledWith(U1, expect.objectContaining({
       title: expect.stringContaining('30 min'),
-      body: 'ARG vs BRA',
+      body: expect.stringContaining('todavía podés apostar'),
     }))
     expect(sendSMS).toHaveBeenCalledWith(expect.objectContaining({
       to: '+5491155996222',

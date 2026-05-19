@@ -387,9 +387,21 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
     const globalPosition = globalPositionMap[r.user_id] || null;
 
     // ── Resumen post-fecha ─────────────────────────────────────────────────
+    const isWinner = top.user_id === r.user_id;
+    let summaryTitle, summaryBody;
+    if (isWinner) {
+      summaryTitle = `👑 ¡Ganaste ${matchday.name}!`;
+      summaryBody = `${r.points} pts — sos el crack de la fecha.`;
+    } else if (r.rank <= 3) {
+      summaryTitle = `🏆 Terminaste #${r.rank} en ${matchday.name}`;
+      summaryBody = `${r.points} pts. El ganador: ${top.user_name} con ${top.points} pts.`;
+    } else {
+      summaryTitle = `🏁 ${matchday.name} cerrada`;
+      summaryBody = `${r.points} pts — #${r.rank} de ${totalPlanillas}. El ganador: ${top.user_name}.`;
+    }
     const summaryPayload = {
-      title: `🏁 ${matchday.name} cerrada`,
-      body: `Hiciste ${r.points} pts. ${top.user_id !== r.user_id ? `Top: ${top.user_name} con ${top.points} pts.` : '¡Ganaste la fecha!'}`,
+      title: summaryTitle,
+      body: summaryBody,
       icon: 'soccer',
     };
 
@@ -425,8 +437,8 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
     const maxPts = histRes.rows[0]?.max_pts ?? null;
     if (maxPts !== null && r.points > parseInt(maxPts)) {
       const recordPayload = {
-        title: '🔥 ¡Récord personal!',
-        body: `${r.points} pts en ${matchday.name}, tu mejor performance.`,
+        title: '🔥 Nuevo récord personal',
+        body: `${r.points} pts en ${matchday.name}. Superaste tu marca anterior (${parseInt(maxPts)} pts).`,
         icon: 'star',
       };
       pushToUser(r.user_id, { title: recordPayload.title, body: recordPayload.body }).catch(err =>
@@ -453,9 +465,19 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
       else break;
     }
     if (streak > 0 && streak % 3 === 0) {
+      const streakTitle = streak >= 9
+        ? `🎯 ${streak} exactos seguidos 🔥`
+        : streak >= 6
+        ? `🎯 ¡${streak} exactos seguidos!`
+        : `🎯 ${streak} exactos al hilo`;
+      const streakBody = streak >= 9
+        ? 'Histórico. Nadie llega a esto.'
+        : streak >= 6
+        ? 'Sos el más caliente del PRODE ahora mismo.'
+        : 'Nadie te para. Seguís así y el podio es tuyo.';
       const streakPayload = {
-        title: `🎯 ¡${streak} exactos seguidos!`,
-        body: 'Sos imparable.',
+        title: streakTitle,
+        body: streakBody,
         icon: 'star',
       };
       pushToUser(r.user_id, { title: streakPayload.title, body: streakPayload.body }).catch(err =>

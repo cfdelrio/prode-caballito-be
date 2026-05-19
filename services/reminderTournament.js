@@ -55,8 +55,8 @@ async function runTournamentReminders() {
             const payload = {
                 title: `🏁 Mañana arranca ${t.tournament_name}`,
                 body: pending === 1
-                    ? `Tenés 1 partido sin pronosticar. ¡No te lo pierdas!`
-                    : `Tenés ${pending} partidos sin pronosticar. ¡No te los pierdas!`,
+                    ? `Tenés 1 partido sin apostar. Tu ranking empieza ahora.`
+                    : `Tenés ${pending} partidos sin apostar. Tu ranking empieza ahora.`,
                 icon: 'soccer',
             }
 
