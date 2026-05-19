@@ -33,6 +33,7 @@ const firstMatchIn60Min = () => new Date(Date.now() + 60 * 60 * 1000)
 
 beforeEach(() => {
   db.query.mockReset()
+  db.query.mockResolvedValue({ rows: [] })
   pushToUser.mockClear()
   sendSMS.mockClear()
 })
@@ -130,6 +131,13 @@ describe('runCutoffReminders — tournament-level', () => {
       to: '+5491155996222',
       body: expect.stringContaining('Mundial'),
     }))
+    // Inserta notif in-app para historial (type='cutoff_reminder')
+    const notifCall = db.query.mock.calls.find(c =>
+      typeof c[0] === 'string' && /INSERT INTO notifications.*'cutoff_reminder'/s.test(c[0])
+    )
+    expect(notifCall).toBeDefined()
+    expect(notifCall[1][0]).toBe(U1)
+    expect(notifCall[1][1]).toBe(M1) // first_match_id
   })
 
   it('skip si reminder_sent ya tenía registro (ON CONFLICT)', async () => {

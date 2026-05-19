@@ -129,6 +129,17 @@ async function runCutoffReminders() {
                 await sendSMSWithRetry({ to: row.whatsapp_number, body: smsBody })
                     .catch(err => console.error(`[cutoff-reminder] sms failed (after retries) user=${row.user_id}:`, err.message));
             }
+
+            // In-app history: link to the first match of the tournament so the entry has context.
+            await db.query(
+                `INSERT INTO notifications (user_id, match_id, type, payload, status, sent_at)
+                 VALUES ($1, $2, 'cutoff_reminder', $3, 'sent', NOW())`,
+                [row.user_id, t.first_match_id, JSON.stringify({
+                    title: payload.title, body: payload.body, icon: 'clock',
+                })]
+            ).catch(err =>
+                console.error(`[cutoff-reminder] notif insert failed user=${row.user_id}:`, err.message)
+            );
             notified++;
         }
     }
@@ -182,6 +193,16 @@ async function runCutoffReminders() {
                 await sendSMSWithRetry({ to: row.whatsapp_number, body: smsBody })
                     .catch(err => console.error(`[cutoff-reminder] sms failed (after retries) user=${row.user_id}:`, err.message));
             }
+
+            await db.query(
+                `INSERT INTO notifications (user_id, match_id, type, payload, status, sent_at)
+                 VALUES ($1, $2, 'cutoff_reminder', $3, 'sent', NOW())`,
+                [row.user_id, match.id, JSON.stringify({
+                    title: payload.title, body: payload.body, icon: 'clock',
+                })]
+            ).catch(err =>
+                console.error(`[cutoff-reminder] notif insert failed user=${row.user_id}:`, err.message)
+            );
             notified++;
         }
     }

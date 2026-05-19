@@ -22,6 +22,8 @@ const M2 = '33333333-3333-3333-3333-333333333333'
 
 beforeEach(() => {
   db.query.mockReset()
+  // Default for any unmocked call (e.g. notifications INSERT, bet_reminders UPDATE)
+  db.query.mockResolvedValue({ rows: [] })
   pushToUser.mockClear()
   sendSMS.mockClear()
 })
@@ -57,9 +59,12 @@ describe('processBetReminders', () => {
       to: '+5491155996222',
       body: expect.stringContaining('30 min'),
     }))
-    // UPDATE was called with id=1
-    expect(db.query.mock.calls[1][0]).toMatch(/UPDATE bet_reminders SET email_sent = true/)
-    expect(db.query.mock.calls[1][1]).toEqual([1])
+    // call[0]=SELECT, call[1]=INSERT notifications, call[2]=UPDATE bet_reminders
+    expect(db.query.mock.calls[1][0]).toMatch(/INSERT INTO notifications.*'bet_reminder'/s)
+    expect(db.query.mock.calls[1][1][0]).toBe(U1)
+    expect(db.query.mock.calls[1][1][1]).toBe(M1)
+    expect(db.query.mock.calls[2][0]).toMatch(/UPDATE bet_reminders SET email_sent = true/)
+    expect(db.query.mock.calls[2][1]).toEqual([1])
   })
 
   it('no envía SMS si whatsapp_consent es false', async () => {
