@@ -49,8 +49,9 @@ function parseConfigValue(raw) {
 }
 
 async function uploadImageToS3(imageData) {
-  const AWS = require('aws-sdk');
-  const s3 = new AWS.S3({ region: 'us-east-1' });
+  const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+  const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+  const s3 = new S3Client({ region: 'us-east-1' });
   const key = `winners/${Date.now()}.png`;
 
   let body;
@@ -73,18 +74,18 @@ async function uploadImageToS3(imageData) {
     throw new Error('imageData debe ser base64 data URI o URL http(s)');
   }
 
-  await s3.putObject({
+  await s3.send(new PutObjectCommand({
     Bucket: 'prode-uploads-cdelrio',
     Key: key,
     Body: body,
     ContentType: 'image/png',
-  }).promise();
+  }));
 
-  const url = s3.getSignedUrl('getObject', {
-    Bucket: 'prode-uploads-cdelrio',
-    Key: key,
-    Expires: 10 * 365 * 24 * 3600,
-  });
+  const url = await getSignedUrl(
+    s3,
+    new GetObjectCommand({ Bucket: 'prode-uploads-cdelrio', Key: key }),
+    { expiresIn: 10 * 365 * 24 * 3600 }
+  );
   console.log('[winner] Imagen subida a S3:', key);
   return url;
 }
@@ -133,7 +134,7 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
     if (winner.user_avatar) {
       try {
         const respRes = await openAiPost('/v1/responses', {
-          model: 'gpt-4o',
+          model: 'gpt-image-1',
           input: [{
             role: 'user',
             content: [
@@ -177,7 +178,6 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
         n: 1,
         size: '1024x1024',
         quality: 'hd',
-        style: 'vivid',
       });
       if (imageRes.error) {
         console.error('DALL-E error:', JSON.stringify(imageRes.error));
@@ -186,11 +186,13 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
       console.log('DALL-E fallback image URL:', imageUri ? 'OK (URL received)' : 'null');
     }
 
-    if (!imageUri) throw new Error('No image generated');
+    if (!imageUri) {
+      console.warn('[winner] No se generó imagen — el carousel se actualiza sin imagen');
+    }
 
-    // ── Persistir imagen del ganador en carousel config ──────────────────────
+    // ── Persistir ganador en carousel config (con o sin imagen) ─────────────
     try {
-      const imageUrl = await uploadImageToS3(imageUri);
+      const imageUrl = imageUri ? await uploadImageToS3(imageUri) : null;
 
       const entry = {
         image_url: imageUrl,
@@ -205,7 +207,9 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
         const parsed = parseConfigValue(existingRes.rows[0].value);
         if (Array.isArray(parsed)) carouselWinners = parsed;
       }
-      carouselWinners.push(entry);
+      // Reemplazar entrada existente para esta fecha (evitar duplicados)
+      const idx = carouselWinners.findIndex(e => e.matchday_label === matchday.name);
+      if (idx >= 0) carouselWinners[idx] = entry; else carouselWinners.push(entry);
       await connection_1.db.query(
         `INSERT INTO config (key, value, updated_at) VALUES ('ganadores_fechas', $1, NOW()) ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
         [JSON.stringify(carouselWinners)]
@@ -214,7 +218,7 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
         `INSERT INTO config (key, value, updated_at) VALUES ('ganador_fecha', $1, NOW()) ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
         [JSON.stringify(entry)]
       );
-      console.log('[winner] Imagen guardada en carousel config — total ganadores:', carouselWinners.length);
+      console.log('[winner] Ganador guardado en carousel config — total:', carouselWinners.length, '— imagen:', imageUrl ? 'sí' : 'no');
     } catch (saveErr) {
       console.error('[winner] Error guardando en carousel config:', saveErr.message);
     }
@@ -222,35 +226,39 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
     const recipients = allEmails.length > 0 ? allEmails : [winnerEmail];
     console.log(`Sending to ${recipients.length} recipients`);
 
-    function sendImagemail(to, subject, message) {
-      const body = JSON.stringify({ to, uri: imageUri, subject, message });
-      return new Promise((resolve, reject) => {
-        const req = https.request({
-          hostname: process.env.API_HOSTNAME || 't49euho172.execute-api.us-east-1.amazonaws.com',
-          path: '/prod/api/imagemail',
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-          timeout: 60000,
-        }, (res) => { res.resume(); resolve(res.statusCode); });
-        req.on('error', reject);
-        req.on('timeout', () => { req.destroy(); reject(new Error('imagemail timeout')); });
-        req.write(body);
-        req.end();
-      });
-    }
+    if (imageUri) {
+      function sendImagemail(to, subject, message) {
+        const body = JSON.stringify({ to, uri: imageUri, subject, message });
+        return new Promise((resolve, reject) => {
+          const req = https.request({
+            hostname: process.env.API_HOSTNAME || 't49euho172.execute-api.us-east-1.amazonaws.com',
+            path: '/prod/api/imagemail',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+            timeout: 60000,
+          }, (res) => { res.resume(); resolve(res.statusCode); });
+          req.on('error', reject);
+          req.on('timeout', () => { req.destroy(); reject(new Error('imagemail timeout')); });
+          req.write(body);
+          req.end();
+        });
+      }
 
-    await runConcurrent(recipients, async (email) => {
-      const isWinner = email === winnerEmail;
-      const subject = isWinner
-        ? `🏆 ¡Ganaste ${matchday.name}!`
-        : `🏆 ${winner.user_name} ganó ${matchday.name}`;
-      const scorerLine = scorerNames ? `Goleadores de la fecha: ${scorerNames}` : motivational;
-      const message = isWinner
-        ? `¡Felicitaciones ${winner.user_name}! Ganaste con ${winner.points} puntos.\n${scorerLine}`
-        : `${winner.user_name} ganó ${matchday.name} con ${winner.points} puntos.\n${scorerLine}`;
-      const status = await sendImagemail(email, subject, message);
-      console.log(`Email sent to ${email} — status ${status}`);
-    }, 10);
+      await runConcurrent(recipients, async (email) => {
+        const isWinner = email === winnerEmail;
+        const subject = isWinner
+          ? `🏆 ¡Ganaste ${matchday.name}!`
+          : `🏆 ${winner.user_name} ganó ${matchday.name}`;
+        const scorerLine = scorerNames ? `Goleadores de la fecha: ${scorerNames}` : motivational;
+        const message = isWinner
+          ? `¡Felicitaciones ${winner.user_name}! Ganaste con ${winner.points} puntos.\n${scorerLine}`
+          : `${winner.user_name} ganó ${matchday.name} con ${winner.points} puntos.\n${scorerLine}`;
+        const status = await sendImagemail(email, subject, message);
+        console.log(`Email sent to ${email} — status ${status}`);
+      }, 10);
+    } else {
+      console.log('[winner] Sin imagen — emails de card omitidos');
+    }
 
     console.log('Winner notification complete — all emails sent');
 
@@ -348,6 +356,142 @@ async function ensureMatchday(tournamentId, matchDate) {
   return res.rows[0];
 }
 
+async function _notifyMatchdayClose(rows, matchday, matchdayId) {
+  const { pushToUser } = require('../services/push');
+  const { sendPostMatchdayEmail } = require('../services/email');
+
+  const top = rows[0]; // already sorted desc by points
+  const totalPlanillas = rows.length;
+
+  // Query all user emails for the email notifications
+  const allUserIds = rows.map(r => r.user_id);
+  const emailsRes = await connection_1.db.query(
+    `SELECT id, email FROM users WHERE id = ANY($1::uuid[]) AND email IS NOT NULL AND email != ''`,
+    [allUserIds]
+  );
+  const emailMap = {};
+  for (const row of emailsRes.rows) emailMap[row.id] = row.email;
+
+  // Also query global ranking positions for each planilla
+  const rankingRes = await connection_1.db.query(
+    `SELECT p.user_id, r.position FROM ranking r
+     JOIN planillas p ON p.id = r.planilla_id
+     WHERE p.user_id = ANY($1::uuid[]) AND r.position IS NOT NULL`,
+    [allUserIds]
+  );
+  const globalPositionMap = {};
+  for (const row of rankingRes.rows) globalPositionMap[row.user_id] = row.position;
+
+  for (const r of rows) {
+    const userEmail = emailMap[r.user_id];
+    const globalPosition = globalPositionMap[r.user_id] || null;
+
+    // ── Resumen post-fecha ─────────────────────────────────────────────────
+    const isWinner = top.user_id === r.user_id;
+    let summaryTitle, summaryBody;
+    if (isWinner) {
+      summaryTitle = `👑 ¡Ganaste ${matchday.name}!`;
+      summaryBody = `${r.points} pts — sos el crack de la fecha.`;
+    } else if (r.rank <= 3) {
+      summaryTitle = `🏆 Terminaste #${r.rank} en ${matchday.name}`;
+      summaryBody = `${r.points} pts. El ganador: ${top.user_name} con ${top.points} pts.`;
+    } else {
+      summaryTitle = `🏁 ${matchday.name} cerrada`;
+      summaryBody = `${r.points} pts — #${r.rank} de ${totalPlanillas}. El ganador: ${top.user_name}.`;
+    }
+    const summaryPayload = {
+      title: summaryTitle,
+      body: summaryBody,
+      icon: 'soccer',
+    };
+
+    pushToUser(r.user_id, { title: summaryPayload.title, body: summaryPayload.body }).catch(err =>
+      console.error(`[matchday-close] push failed user=${r.user_id}:`, err.message)
+    );
+    await connection_1.db.query(
+      `INSERT INTO notifications (user_id, type, payload, status, sent_at)
+       VALUES ($1, 'matchday_summary', $2, 'sent', NOW())`,
+      [r.user_id, JSON.stringify(summaryPayload)]
+    ).catch(err => console.error(`[matchday-close] summary insert failed user=${r.user_id}:`, err.message));
+
+    if (userEmail) {
+      sendPostMatchdayEmail({
+        userEmail,
+        userName: r.user_name,
+        matchdayName: matchday.name,
+        points: r.points,
+        rankInMatchday: r.rank,
+        globalPosition,
+        topName: top.user_name,
+        topPoints: top.points,
+        totalPlanillas,
+      }).catch(err => console.error(`[matchday-close] email failed user=${r.user_id}:`, err.message));
+    }
+
+    // ── Récord personal ────────────────────────────────────────────────────
+    const histRes = await connection_1.db.query(
+      `SELECT MAX(points) AS max_pts FROM scores_by_matchday
+       WHERE planilla_id = $1 AND matchday_id != $2`,
+      [r.planilla_id, matchdayId]
+    ).catch(() => ({ rows: [{ max_pts: null }] }));
+    const maxPts = histRes.rows[0]?.max_pts ?? null;
+    if (maxPts !== null && r.points > parseInt(maxPts)) {
+      const recordPayload = {
+        title: '🔥 Nuevo récord personal',
+        body: `${r.points} pts en ${matchday.name}. Superaste tu marca anterior (${parseInt(maxPts)} pts).`,
+        icon: 'star',
+      };
+      pushToUser(r.user_id, { title: recordPayload.title, body: recordPayload.body }).catch(err =>
+        console.error(`[matchday-close] record push failed user=${r.user_id}:`, err.message)
+      );
+      await connection_1.db.query(
+        `INSERT INTO notifications (user_id, type, payload, status, sent_at)
+         VALUES ($1, 'personal_record', $2, 'sent', NOW())`,
+        [r.user_id, JSON.stringify(recordPayload)]
+      ).catch(err => console.error(`[matchday-close] record insert failed user=${r.user_id}:`, err.message));
+    }
+
+    // ── Streak de exactos ──────────────────────────────────────────────────
+    const streakRes = await connection_1.db.query(
+      `SELECT s.puntos_obtenidos FROM scores s
+       JOIN matches m ON s.match_id = m.id
+       WHERE s.planilla_id = $1 AND m.estado = 'finished'
+       ORDER BY m.start_time DESC LIMIT 10`,
+      [r.planilla_id]
+    ).catch(() => ({ rows: [] }));
+    let streak = 0;
+    for (const sr of streakRes.rows) {
+      if (sr.puntos_obtenidos >= 3) streak++;
+      else break;
+    }
+    if (streak > 0 && streak % 3 === 0) {
+      const streakTitle = streak >= 9
+        ? `🎯 ${streak} exactos seguidos 🔥`
+        : streak >= 6
+        ? `🎯 ¡${streak} exactos seguidos!`
+        : `🎯 ${streak} exactos al hilo`;
+      const streakBody = streak >= 9
+        ? 'Histórico. Nadie llega a esto.'
+        : streak >= 6
+        ? 'Sos el más caliente del PRODE ahora mismo.'
+        : 'Nadie te para. Seguís así y el podio es tuyo.';
+      const streakPayload = {
+        title: streakTitle,
+        body: streakBody,
+        icon: 'star',
+      };
+      pushToUser(r.user_id, { title: streakPayload.title, body: streakPayload.body }).catch(err =>
+        console.error(`[matchday-close] streak push failed user=${r.user_id}:`, err.message)
+      );
+      await connection_1.db.query(
+        `INSERT INTO notifications (user_id, type, payload, status, sent_at)
+         VALUES ($1, 'streak_exactos', $2, 'sent', NOW())`,
+        [r.user_id, JSON.stringify(streakPayload)]
+      ).catch(err => console.error(`[matchday-close] streak insert failed user=${r.user_id}:`, err.message));
+    }
+  }
+}
+
 async function recalcMatchday(matchdayId) {
   const mdRes = await connection_1.db.query('SELECT * FROM matchdays WHERE id = $1', [matchdayId]);
   if (mdRes.rows.length === 0) throw new Error('Matchday not found');
@@ -430,31 +574,56 @@ async function recalcMatchday(matchdayId) {
   const winner = rows.find(r => r.is_winner);
   if (winner) {
     try {
-      const allUserIds = rows.map(r => r.user_id);
-      const emailsRes = await connection_1.db.query(
-        `SELECT id, email FROM users WHERE id = ANY($1::uuid[]) AND email IS NOT NULL AND email != ''`,
-        [allUserIds]
+      // Only fire winner notifications when ALL matches of the matchday are finished
+      const totalRes = await connection_1.db.query(
+        `SELECT COUNT(*) AS total FROM matches
+         WHERE tournament_id = $1
+           AND DATE(start_time AT TIME ZONE 'America/Argentina/Buenos_Aires') = $2`,
+        [matchday.tournament_id, matchday.match_date]
       );
-      const emailMap = {};
-      for (const row of emailsRes.rows) emailMap[row.id] = row.email;
+      const totalMatches = parseInt(totalRes.rows[0].total);
+      const allFinished = dayMatches.length === totalMatches && totalMatches > 0;
 
-      const winnerEmail = emailMap[winner.user_id] || '';
-      const allEmails = Object.values(emailMap);
+      if (!allFinished) {
+        console.log(`[matchday] ${dayMatches.length}/${totalMatches} partidos terminados — esperando último resultado para notificar ganador`);
+      } else if (matchday.winner_announced_at) {
+        console.log(`[matchday] Winner ya notificado el ${matchday.winner_announced_at} — skip dedup`);
+      } else {
+        // Post-matchday notifications: resumen + récord personal + streak de exactos
+        await _notifyMatchdayClose(rows, matchday, matchdayId).catch(err =>
+          console.error('[matchday] _notifyMatchdayClose failed:', err.message)
+        );
 
-      const AWS = require('aws-sdk');
-      const lambda = new AWS.Lambda({ region: process.env.AWS_REGION || 'us-east-1' });
-      await lambda.invoke({
-        FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME || 'prode-api',
-        InvocationType: 'Event',
-        Payload: JSON.stringify({
-          source: 'winner-notification',
-          winner: { user_id: winner.user_id, user_name: winner.user_name, user_avatar: winner.user_avatar, points: winner.points },
-          matchday: { id: matchday.id, name: matchday.name, tournament_id: matchday.tournament_id },
-          winnerEmail,
-          allEmails,
-        }),
-      }).promise();
-      console.log(`Winner notification invoked async — winner: ${winnerEmail}, total recipients: ${allEmails.length}`);
+        const allUserIds = rows.map(r => r.user_id);
+        const emailsRes = await connection_1.db.query(
+          `SELECT id, email FROM users WHERE id = ANY($1::uuid[]) AND email IS NOT NULL AND email != ''`,
+          [allUserIds]
+        );
+        const emailMap = {};
+        for (const row of emailsRes.rows) emailMap[row.id] = row.email;
+
+        const winnerEmail = emailMap[winner.user_id] || '';
+        const allEmails = Object.values(emailMap);
+
+        const { LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda');
+        const lambda = new LambdaClient({ region: process.env.AWS_REGION || 'us-east-1' });
+        await lambda.send(new InvokeCommand({
+          FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME || 'prode-api',
+          InvocationType: 'Event',
+          Payload: Buffer.from(JSON.stringify({
+            source: 'winner-notification',
+            winner: { user_id: winner.user_id, user_name: winner.user_name, user_avatar: winner.user_avatar, points: winner.points },
+            matchday: { id: matchday.id, name: matchday.name, tournament_id: matchday.tournament_id },
+            winnerEmail,
+            allEmails,
+          })),
+        }));
+        await connection_1.db.query(
+          'UPDATE matchdays SET winner_announced_at = NOW() WHERE id = $1',
+          [matchday.id]
+        );
+        console.log(`[matchday] Todos los partidos terminados — winner notification invocada async para ${winnerEmail} (${allEmails.length} destinatarios)`);
+      }
     } catch (err) {
       console.error('Error preparing winner notification:', err.message);
     }

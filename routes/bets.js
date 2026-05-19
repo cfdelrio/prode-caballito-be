@@ -14,8 +14,8 @@ async function getTournamentCutoff(tid) {
         const t = r.rows[0] && r.rows[0].t;
         if (!t) return null;
         const c = await connection_1.db.query('SELECT value FROM config WHERE key = $1', ['tournament_cutoff_minutes_' + tid]);
-        let m = 30;
-        if (c.rows.length > 0) { const v = c.rows[0].value; m = Number(typeof v === 'string' ? JSON.parse(v) : v) || 30; }
+        let m = 5;
+        if (c.rows.length > 0) { const v = c.rows[0].value; m = Number(typeof v === 'string' ? JSON.parse(v) : v) || 5; }
         return new Date(new Date(t).getTime() - m * 60 * 1000);
     });
 }
@@ -160,13 +160,7 @@ router.post('/', auth_1.authMiddleware, validation_1.betValidation, async (req, 
 router.post('/score', auth_1.authMiddleware, validation_1.betScoreValidation, async (req, res) => {
     try {
         const { planilla_id, match_id, score, remind_before_minutes } = req.body;
-        console.log('=== BET SCORE REQUEST ===');
-        console.log('user:', req.user?.email, req.user?.userId);
-        console.log('planilla_id:', planilla_id);
-        console.log('match_id:', match_id);
-        console.log('score:', score);
         const planillaResult = await connection_1.db.query('SELECT user_id, precio_pagado FROM planillas WHERE id = $1', [planilla_id]);
-        console.log('planillaResult:', planillaResult.rows);
         if (planillaResult.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Planilla no encontrada' });
         }

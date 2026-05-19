@@ -9,11 +9,9 @@ const auth_1 = require("../middleware/auth");
 const validation_1 = require("../middleware/validation");
 const rateLimit_1 = require("../middleware/rateLimit");
 const config_1 = require("../config");
-const aws_sdk_1 = __importDefault(require("aws-sdk"));
+const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const router = (0, express_1.Router)();
-const s3 = new aws_sdk_1.default.S3({
-    region: process.env.AWS_REGION || 'us-east-1',
-});
+const s3 = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
 router.get('/by-email', auth_1.authMiddleware, auth_1.requireAdmin, async (req, res) => {
     try {
         const { email } = req.query;
@@ -96,11 +94,25 @@ router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, validation_1.u
         if (tema_equipo && !validThemes.includes(tema_equipo)) {
             return res.status(400).json({ success: false, error: 'Tema inválido. Opciones: ' + validThemes.join(', ') });
         }
-        // Validar whatsapp_number si se proporciona
-        if (whatsapp_number !== undefined && whatsapp_number !== null && whatsapp_number !== '') {
-            const clean = whatsapp_number.replace(/\D/g, '');
-            if (clean.length < 7 || clean.length > 15) {
-                return res.status(400).json({ success: false, error: 'Número de WhatsApp inválido' });
+        // Validate and normalize whatsapp_number to E.164 (+[country_code][number])
+        let normalizedPhone = undefined;
+        if (whatsapp_number !== undefined && whatsapp_number !== null) {
+            if (whatsapp_number === '') {
+                normalizedPhone = null;
+            } else {
+                // Strip everything except digits and leading +
+                const withPlus = whatsapp_number.trim().startsWith('+')
+                    ? '+' + whatsapp_number.replace(/\D/g, '')
+                    : whatsapp_number.replace(/\D/g, '');
+                const digits = withPlus.replace(/^\+/, '');
+                // E.164: must start with +, total 7-15 digits, country code means >= 10 digits
+                if (!withPlus.startsWith('+') || digits.length < 10 || digits.length > 15) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Número inválido. Ingresalo en formato internacional: +549XXXXXXXXXX',
+                    });
+                }
+                normalizedPhone = withPlus; // store as +XXXXXXXXXXX
             }
         }
         const result = await connection_1.db.query(`UPDATE users SET
@@ -113,7 +125,7 @@ router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, validation_1.u
        RETURNING id, nombre, email, rol, idioma_pref, tema_equipo, foto_url, whatsapp_number, whatsapp_consent`,
             [nombre, idioma_pref, tema_equipo,
              whatsapp_consent !== undefined ? whatsapp_consent : null,
-             whatsapp_number !== undefined ? (whatsapp_number === '' ? null : whatsapp_number.replace(/\D/g, '')) : null,
+             normalizedPhone !== undefined ? normalizedPhone : null,
              id]);
         res.json({ success: true, data: result.rows[0] });
     }
@@ -140,12 +152,12 @@ router.post('/:id/photo', auth_1.authMiddleware, rateLimit_1.uploadLimiter, asyn
             return res.status(400).json({ success: false, error: 'El archivo debe ser menor a 5MB' });
         }
         const key = `avatars/${id}/${Date.now()}-${file.name}`;
-        await s3.upload({
+        await s3.send(new PutObjectCommand({
             Bucket: process.env.S3_BUCKET_UPLOADS,
             Key: key,
             Body: file.data,
             ContentType: file.mimetype,
-        }).promise();
+        }));
         const fotoUrl = `${config_1.config.aws.cdnUrl}/${key}`;
         await connection_1.db.query('UPDATE users SET foto_url = $1 WHERE id = $2', [fotoUrl, id]);
         res.json({ success: true, data: { foto_url: fotoUrl } });
@@ -214,23 +226,20 @@ router.post('/upload-avatar', auth_1.authMiddleware, rateLimit_1.uploadLimiter, 
     try {
         const { image, fileName, contentType } = req.body;
         const userId = req.user.userId;
-        console.log('Upload avatar request:', { userId, fileName, contentType, hasImage: !!image });
         if (!image) {
             return res.status(400).json({ success: false, error: 'No se recibió ninguna imagen' });
         }
         const buffer = Buffer.from(image, 'base64');
         const ext = fileName?.split('.').pop() || 'jpg';
         const key = `avatars/${userId}-${Date.now()}.${ext}`;
-        console.log('Uploading to S3:', { key, bucket: process.env.S3_BUCKET_UPLOADS });
         const bucket = process.env.S3_BUCKET_UPLOADS || 'prode-uploads-cdelrio';
-        await s3.upload({
+        await s3.send(new PutObjectCommand({
             Bucket: bucket,
             Key: key,
             Body: buffer,
             ContentType: contentType || 'image/jpeg',
-        }).promise();
+        }));
         const avatarUrl = `${config_1.config.aws.cdnUrl}/${key}`;
-        console.log('Avatar uploaded:', avatarUrl);
         await connection_1.db.query('UPDATE users SET foto_url = $1 WHERE id = $2', [avatarUrl, userId]);
         res.json({
             success: true,

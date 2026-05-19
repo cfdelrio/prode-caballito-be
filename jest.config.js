@@ -8,6 +8,8 @@ module.exports = {
   collectCoverageFrom: [
     'services/**/*.js',
     'middleware/**/*.js',
+    'routes/**/*.js',
+    'workers/**/*.js',
     '!**/*.map.js',
   ],
 }

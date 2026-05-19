@@ -61,8 +61,9 @@ Seguimos **Gitflow Workflow** ([Atlassian Gitflow Guide](https://www.atlassian.c
 - ✅ Release ordenado (staging → prod).
 
 ## Flujo de implementación (paso a paso)
-1. Analizar archivos.
-2. Proponer plan.
-3. Implementar cambios mínimos y seguros.
-4. Probar build.
-5. Resumir cambios y crear PR.
+1. **`git pull origin <rama-actual>`** antes de escribir cualquier línea de código.
+2. Analizar archivos.
+3. Proponer plan.
+4. Implementar cambios mínimos y seguros.
+5. Probar build.
+6. Resumir cambios y crear PR.

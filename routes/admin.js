@@ -3,12 +3,28 @@ const { Router } = require("express");
 const { authMiddleware, requireAdmin } = require("../middleware/auth");
 const { adminTestWhatsappValidation, adminWeeklyEmailValidation, adminWinnerImageValidation, adminRecalcMatchdayValidation, adminSendWelcomeValidation, adminTriggerWinnerValidation } = require("../middleware/validation");
 const { sendWhatsApp } = require("../services/whatsapp");
+const { sendSMS } = require("../services/sms");
 const { db } = require("../db/connection");
 const { sendWeeklyEmail } = require("../services/email");
 const { runValidation } = require("../services/scoreValidator");
 const { runConcurrent } = require("../services/concurrency");
+const { runCutoffReminders } = require("../services/reminderCutoff");
 
 const router = Router();
+
+router.post('/test-sms', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { to, message } = req.body;
+        if (!to || !message) {
+            return res.status(400).json({ success: false, error: 'to y message requeridos' });
+        }
+        const result = await sendSMS({ to, body: message });
+        res.json({ success: true, message: `SMS enviado a ${to}`, data: result });
+    } catch (error) {
+        console.error('[admin] test-sms error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 router.post('/test-whatsapp', authMiddleware, requireAdmin, adminTestWhatsappValidation, async (req, res) => {
     try {
@@ -177,12 +193,18 @@ router.post('/weekly-email', authMiddleware, requireAdmin, adminWeeklyEmailValid
 });
 
 // POST /api/admin/winner-image
-// Body: { image_url: "...", matchday_label: "Fecha 3" }
+// Body: { image_url: "...", matchday_label: "Fecha 3", user_name: "...", points: 42 }
 router.post('/winner-image', authMiddleware, requireAdmin, adminWinnerImageValidation, async (req, res) => {
     try {
-        const { image_url, matchday_label } = req.body;
+        const { image_url, matchday_label, user_name, points } = req.body;
         if (!image_url) return res.status(400).json({ success: false, error: 'image_url requerida' });
-        const entry = { image_url, matchday_label, updated_at: new Date().toISOString() };
+        const entry = {
+            image_url,
+            ...(matchday_label && { matchday_label }),
+            ...(user_name && { user_name }),
+            ...(points != null && { points: Number(points) }),
+            updated_at: new Date().toISOString(),
+        };
 
         // Upsert single latest winner
         await db.query(`
@@ -329,6 +351,59 @@ router.get('/validate-scores', authMiddleware, requireAdmin, async (req, res) =>
         res.json({ success: true, data: result });
     } catch (error) {
         console.error('[admin/validate-scores]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.post('/jobs/cutoff-reminders', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const result = await runCutoffReminders();
+        res.json({ success: true, data: result });
+    } catch (error) {
+        console.error('[admin/cutoff-reminders]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.get('/upcoming-cutoffs', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const minutes = Math.min(parseInt(req.query.minutes) || 60, 1440);
+        const result = await db.query(`
+            SELECT id, home_team, away_team, estado, time_cutoff, start_time,
+                   ROUND(EXTRACT(EPOCH FROM (time_cutoff - NOW())) / 60) AS min_until_cutoff
+            FROM matches
+            WHERE estado = 'scheduled'
+              AND time_cutoff IS NOT NULL
+              AND time_cutoff BETWEEN NOW() AND NOW() + ($1 || ' minutes')::INTERVAL
+            ORDER BY time_cutoff ASC
+        `, [minutes]);
+        res.json({ success: true, data: result.rows, count: result.rows.length, window_minutes: minutes });
+    } catch (error) {
+        console.error('[admin/upcoming-cutoffs]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.post('/jobs/backfill-scheduled-jobs', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const result = await db.query(`
+            INSERT INTO scheduled_jobs (match_id, job_type, scheduled_for, status)
+            SELECT id, 'kickoff', start_time, 'pending'
+            FROM matches
+            WHERE estado = 'scheduled' AND start_time > NOW()
+            UNION ALL
+            SELECT id, 'second_half',
+                   start_time + INTERVAL '45 minutes' + (halftime_minutes || ' minutes')::INTERVAL,
+                   'pending'
+            FROM matches
+            WHERE estado = 'scheduled' AND start_time > NOW()
+            ON CONFLICT (match_id, job_type) DO NOTHING
+            RETURNING match_id, job_type, scheduled_for
+        `);
+        console.log(`[admin/backfill] Inserted ${result.rows.length} scheduled_jobs rows`);
+        res.json({ success: true, inserted: result.rows.length, jobs: result.rows });
+    } catch (error) {
+        console.error('[admin/backfill]', error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 });

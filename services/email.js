@@ -63,7 +63,7 @@ const sendRankingUpdateEmail = async (userEmail, userName, newPosition, previous
           <div class="position">#${newPosition}</div>
           <div class="points">${points} puntos</div>
         </div>
-        <p>Ver todos los resultados en: <a href="https://d2vjb37mnj30m1.cloudfront.net/ranking">PRODE Caballito</a></p>
+        <p>Ver todos los resultados en: <a href="https://prodecaballito.com/ranking">PRODE Caballito</a></p>
         <div class="footer">
           © 2026 PRODE Caballito
         </div>
@@ -904,4 +904,147 @@ const sendWeeklyEmail = async (email, {
     });
 };
 exports.sendWeeklyEmail = sendWeeklyEmail;
+
+// ── Post-matchday summary email ──────────────────────────────────────────────
+
+const sendPostMatchdayEmail = async ({ userEmail, userName, matchdayName, points, rankInMatchday, globalPosition, topName, topPoints, totalPlanillas }) => {
+    const posEmoji = rankInMatchday === 1 ? '🥇' : rankInMatchday === 2 ? '🥈' : rankInMatchday === 3 ? '🥉' : `#${rankInMatchday}`;
+    const globalStr = globalPosition != null ? `Estás #${globalPosition} en el ranking general.` : '';
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background-color:#F1F5F9;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr><td align="center" style="padding:32px 16px;">
+    <table width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);">
+      <!-- Header -->
+      <tr><td style="background-color:#001A4B;padding:32px 32px 24px;text-align:center;">
+        <p style="margin:0;font-size:40px;line-height:1;">🏁</p>
+        <p style="margin:10px 0 4px;font-size:20px;font-weight:900;color:#FFCC00;font-family:Arial,sans-serif;letter-spacing:1px;">${matchdayName} — CERRADA</p>
+        <p style="margin:0;font-size:13px;color:#93C5FD;font-family:Arial,sans-serif;">PRODE Caballito</p>
+      </td></tr>
+      <!-- Body -->
+      <tr><td style="background-color:#FFFFFF;padding:32px 32px 28px;">
+        <p style="margin:0 0 8px;font-size:18px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;">¡Hola, ${userName}! 👋</p>
+        <p style="margin:0 0 24px;font-size:15px;color:#374151;font-family:Arial,sans-serif;line-height:1.6;">
+          Así quedaron tus resultados en <strong>${matchdayName}</strong>:
+        </p>
+        <!-- Score card -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;">
+          <tr>
+            <td width="50%" style="padding:4px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#EFF6FF;border-radius:12px;padding:16px;text-align:center;">
+                <tr><td>
+                  <p style="margin:0;font-size:11px;color:#3B82F6;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:1px;font-weight:bold;">Tus puntos</p>
+                  <p style="margin:4px 0 0;font-size:36px;font-weight:900;color:#1D4ED8;font-family:Arial,sans-serif;">${points}</p>
+                </td></tr>
+              </table>
+            </td>
+            <td width="50%" style="padding:4px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F0FDF4;border-radius:12px;padding:16px;text-align:center;">
+                <tr><td>
+                  <p style="margin:0;font-size:11px;color:#16A34A;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:1px;font-weight:bold;">Tu posición en la fecha</p>
+                  <p style="margin:4px 0 0;font-size:36px;font-weight:900;color:#15803D;font-family:Arial,sans-serif;">${posEmoji}</p>
+                </td></tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+        ${globalStr ? `<p style="margin:0 0 12px;font-size:14px;color:#6B7280;font-family:Arial,sans-serif;text-align:center;">${globalStr}</p>` : ''}
+        <!-- Top performer -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:16px 0 24px;background:#FFF7ED;border-radius:12px;padding:16px;">
+          <tr><td style="text-align:center;">
+            <p style="margin:0;font-size:12px;color:#EA580C;font-family:Arial,sans-serif;font-weight:bold;text-transform:uppercase;letter-spacing:1px;">Top de la fecha</p>
+            <p style="margin:6px 0 0;font-size:16px;font-weight:900;color:#9A3412;font-family:Arial,sans-serif;">🏆 ${topName} — ${topPoints} pts</p>
+          </td></tr>
+        </table>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr><td align="center">
+            <a href="https://prodecaballito.com/ranking" style="display:inline-block;background-color:#0042A5;color:#FFFFFF;text-decoration:none;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;padding:14px 36px;border-radius:50px;">Ver el ranking completo →</a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <!-- Footer -->
+      <tr><td style="background-color:#F8FAFC;padding:16px 32px;text-align:center;">
+        <p style="margin:0;font-size:11px;color:#9CA3AF;font-family:Arial,sans-serif;">prodecaballito.com</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+
+    await sendEmail({
+        to: userEmail,
+        subject: `🏁 ${matchdayName} cerrada — Hiciste ${points} pts`,
+        html,
+    });
+};
+exports.sendPostMatchdayEmail = sendPostMatchdayEmail;
+
+const sendPlanillaCierreEmail = async ({ userEmail, userName, planillaNombre, torneoName, matches }) => {
+    const totalMatches = matches.length;
+    const completedBets = matches.filter(m => m.goles_local != null && m.goles_visitante != null).length;
+    const isComplete = completedBets === totalMatches;
+
+    const subject = isComplete
+        ? `✅ Tu planilla "${planillaNombre}" está lista para ${torneoName}`
+        : `⚠️ Tu planilla "${planillaNombre}" cerró con ${totalMatches - completedBets} pronóstico${totalMatches - completedBets === 1 ? '' : 's'} sin cargar`;
+
+    const rows = matches.map(m => {
+        const bet = m.goles_local != null && m.goles_visitante != null
+            ? `${m.goles_local}-${m.goles_visitante}`
+            : '—';
+        return `<tr style="border-bottom:1px solid #E5E7EB;">
+          <td style="padding:10px 12px;font-size:13px;color:#111827;font-family:Arial,sans-serif;">${m.home_team} vs ${m.away_team}</td>
+          <td style="padding:10px 12px;font-size:13px;text-align:center;font-weight:bold;color:${bet === '—' ? '#9CA3AF' : '#001A4B'};font-family:Arial,sans-serif;">${bet}</td>
+        </tr>`;
+    }).join('');
+
+    const headerColor = isComplete ? '#166534' : '#92400E';
+    const headerBg = isComplete ? '#DCFCE7' : '#FEF3C7';
+    const headerEmoji = isComplete ? '✅' : '⚠️';
+    const headerLabel = isComplete ? 'PLANILLA CONFIRMADA' : 'PLANILLA CON PRONÓSTICOS FALTANTES';
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background-color:#F1F5F9;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr><td align="center" style="padding:32px 16px;">
+    <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);">
+      <tr><td style="background-color:#001A4B;padding:28px 32px 20px;text-align:center;">
+        <p style="margin:0;font-size:22px;font-weight:900;color:#FFFFFF;font-family:Arial,sans-serif;">⚽ PRODE Caballito</p>
+        <p style="margin:6px 0 0;font-size:13px;color:#93C5FD;font-family:Arial,sans-serif;">${torneoName}</p>
+      </td></tr>
+      <tr><td style="background-color:${headerBg};padding:16px 32px;text-align:center;">
+        <p style="margin:0;font-size:15px;font-weight:900;color:${headerColor};font-family:Arial,sans-serif;">${headerEmoji} ${headerLabel}</p>
+        <p style="margin:4px 0 0;font-size:13px;color:${headerColor};font-family:Arial,sans-serif;">Cargaste ${completedBets} de ${totalMatches} pronósticos</p>
+      </td></tr>
+      <tr><td style="background-color:#FFFFFF;padding:28px 32px;">
+        <p style="margin:0 0 16px;font-size:16px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;">Hola ${userName} 👋</p>
+        <p style="margin:0 0 20px;font-size:14px;color:#374151;font-family:Arial,sans-serif;line-height:1.6;">
+          ${isComplete
+            ? `Tu planilla <strong>"${planillaNombre}"</strong> está lista. Este es tu resumen de pronósticos para ${torneoName}.`
+            : `El torneo cerró. Te dejamos el resumen de tu planilla <strong>"${planillaNombre}"</strong>. Los pronósticos con <strong>—</strong> no estaban cargados al cierre.`}
+        </p>
+        <table width="100%" cellpadding="0" cellspacing="0" border="1" style="border-collapse:collapse;border-color:#E5E7EB;border-radius:8px;overflow:hidden;">
+          <tr style="background-color:#F9FAFB;">
+            <th style="padding:10px 12px;font-size:12px;font-weight:bold;color:#6B7280;text-align:left;font-family:Arial,sans-serif;">PARTIDO</th>
+            <th style="padding:10px 12px;font-size:12px;font-weight:bold;color:#6B7280;text-align:center;font-family:Arial,sans-serif;">TU PRONÓSTICO</th>
+          </tr>
+          ${rows}
+        </table>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;">
+          <tr><td align="center">
+            <a href="https://prodecaballito.com/planillas" style="display:inline-block;background-color:#001A4B;color:#FFFFFF;text-decoration:none;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;padding:14px 36px;border-radius:50px;">Ver mi planilla →</a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="background-color:#F8FAFC;padding:16px 32px;text-align:center;">
+        <p style="margin:0;font-size:11px;color:#9CA3AF;font-family:Arial,sans-serif;">prodecaballito.com · Este es tu resumen de planilla al cierre del torneo</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+
+    await sendEmail({ to: userEmail, subject, html });
+};
+exports.sendPlanillaCierreEmail = sendPlanillaCierreEmail;
 //# sourceMappingURL=email.js.map
