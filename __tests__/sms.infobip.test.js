@@ -109,3 +109,57 @@ describe('sendSMS (Infobip)', () => {
     log.mockRestore()
   })
 })
+
+describe('sendSMSWithRetry', () => {
+  beforeEach(() => {
+    process.env.INFOBIP_API_KEY  = 'k'
+    process.env.INFOBIP_BASE_URL = 'https://abc.api.infobip.com'
+    process.env.INFOBIP_SMS_FROM = 'ProdeCaba'
+    process.env.SMS_RETRY_BASE_MS = '0' // no sleep en tests
+  })
+
+  it('retorna sin reintentar si el primer envío tiene éxito', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ messages: [{ messageId: 'm1' }] }) })
+
+    const { sendSMSWithRetry } = loadModule()
+    await sendSMSWithRetry({ to: '+5491155996222', body: 'x' })
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('reintenta en error 5xx hasta tener éxito', async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 503, text: async () => 'Service Unavailable' })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ messages: [{}] }) })
+
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    const { sendSMSWithRetry } = loadModule()
+    await sendSMSWithRetry({ to: '+5491155996222', body: 'x' })
+
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+    warn.mockRestore()
+  })
+
+  it('NO reintenta en error 4xx (cliente)', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 400, text: async () => 'Bad number' })
+
+    const { sendSMSWithRetry } = loadModule()
+    await expect(sendSMSWithRetry({ to: 'bad', body: 'x' })).rejects.toThrow(/400/)
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('lanza después de agotar los reintentos (maxAttempts por defecto = 3)', async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 503, text: async () => 'x' })
+      .mockResolvedValueOnce({ ok: false, status: 503, text: async () => 'x' })
+      .mockResolvedValueOnce({ ok: false, status: 503, text: async () => 'x' })
+
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    const { sendSMSWithRetry } = loadModule()
+    await expect(sendSMSWithRetry({ to: '+5491155996222', body: 'x' })).rejects.toThrow(/503/)
+
+    expect(mockFetch).toHaveBeenCalledTimes(3)
+    warn.mockRestore()
+  })
+})

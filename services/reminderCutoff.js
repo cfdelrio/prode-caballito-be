@@ -2,7 +2,7 @@
 
 const { db } = require('../db/connection');
 const { pushToUser } = require('./push');
-const { sendSMS } = require('./whatsapp');
+const { sendSMSWithRetry } = require('./whatsapp');
 
 const REMINDER_TYPE = 'cutoff_30min';
 const DEFAULT_CUTOFF_MINUTES = 5; // minutes before first match that bets lock
@@ -126,8 +126,8 @@ async function runCutoffReminders() {
                 const smsBody = pending === 1
                     ? `⏰ ${t.tournament_name}: te falta 1 pronóstico — tenés ${minutesLeft} min para cargarlo 👉 prodecaballito.com/apuestas`
                     : `⏰ ${t.tournament_name}: te faltan ${pending} pronósticos — tenés ${minutesLeft} min para cargarlos 👉 prodecaballito.com/apuestas`;
-                await sendSMS({ to: row.whatsapp_number, body: smsBody })
-                    .catch(err => console.error(`[cutoff-reminder] sms failed user=${row.user_id}:`, err.message));
+                await sendSMSWithRetry({ to: row.whatsapp_number, body: smsBody })
+                    .catch(err => console.error(`[cutoff-reminder] sms failed (after retries) user=${row.user_id}:`, err.message));
             }
             notified++;
         }
@@ -179,8 +179,8 @@ async function runCutoffReminders() {
 
             if (row.whatsapp_number && row.whatsapp_consent) {
                 const smsBody = `⏰ ${match.home_team} vs ${match.away_team} cierra en ${minutesLeft} min — aún no pronosticaste 👉 prodecaballito.com/apuestas`;
-                await sendSMS({ to: row.whatsapp_number, body: smsBody })
-                    .catch(err => console.error(`[cutoff-reminder] sms failed user=${row.user_id}:`, err.message));
+                await sendSMSWithRetry({ to: row.whatsapp_number, body: smsBody })
+                    .catch(err => console.error(`[cutoff-reminder] sms failed (after retries) user=${row.user_id}:`, err.message));
             }
             notified++;
         }

@@ -8,11 +8,12 @@ jest.mock('../services/push', () => ({
 }))
 jest.mock('../services/whatsapp', () => ({
   sendSMS: jest.fn().mockResolvedValue(undefined),
+  sendSMSWithRetry: jest.fn().mockResolvedValue(undefined),
 }))
 
 const { db } = require('../db/connection')
 const { pushToUser } = require('../services/push')
-const { sendSMS } = require('../services/whatsapp')
+const { sendSMSWithRetry: sendSMS } = require('../services/whatsapp')
 const { processBetReminders } = require('../services/betReminders')
 
 const U1 = '11111111-1111-1111-1111-111111111111'

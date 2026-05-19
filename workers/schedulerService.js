@@ -4,7 +4,7 @@ exports.schedulerService = void 0;
 const connection_1 = require("../db/connection");
 const notificationService_1 = require("./notificationService");
 const { pushToUser } = require('../services/push');
-const { sendSMS } = require('../services/whatsapp');
+const { sendSMSWithRetry } = require('../services/whatsapp');
 exports.schedulerService = {
     async scheduleMatchJobs(match) {
         console.log(`Scheduling jobs for match ${match.id}: ${match.home_team} vs ${match.away_team}`);
@@ -87,8 +87,8 @@ exports.schedulerService = {
                         .catch(err => console.error(`[scheduler] push failed user=${user.user_id}:`, err.message));
                     // SMS if user consented
                     if (user.whatsapp_number && user.whatsapp_consent) {
-                        await sendSMS({ to: user.whatsapp_number, body: smsBody })
-                            .catch(err => console.error(`[scheduler] sms failed user=${user.user_id}:`, err.message));
+                        await sendSMSWithRetry({ to: user.whatsapp_number, body: smsBody })
+                            .catch(err => console.error(`[scheduler] sms failed (after retries) user=${user.user_id}:`, err.message));
                     }
                 }
                 await this.markJobCompleted(job.matchId, job.type);

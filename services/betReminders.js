@@ -2,7 +2,7 @@
 
 const { db } = require('../db/connection');
 const { pushToUser } = require('./push');
-const { sendSMS } = require('./whatsapp');
+const { sendSMSWithRetry } = require('./whatsapp');
 
 /**
  * Process opt-in pre-kickoff reminders saved when the user placed the bet
@@ -55,8 +55,8 @@ async function processBetReminders() {
                 const body = hasBet
                     ? `⚽ ${r.home_team} vs ${r.away_team} empieza en ${r.remind_minutes} min — tu pronóstico: ${score} 🤞 prodecaballito.com`
                     : `⚽ ${r.home_team} vs ${r.away_team} empieza en ${r.remind_minutes} min 👉 prodecaballito.com`;
-                await sendSMS({ to: r.whatsapp_number, body }).catch(err =>
-                    console.error(`[bet-reminders] sms failed user=${r.user_id} match=${r.match_id}:`, err.message)
+                await sendSMSWithRetry({ to: r.whatsapp_number, body }).catch(err =>
+                    console.error(`[bet-reminders] sms failed (after retries) user=${r.user_id} match=${r.match_id}:`, err.message)
                 );
             }
 
