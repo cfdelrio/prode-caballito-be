@@ -27,12 +27,12 @@ async function getTournamentCutoffMinutes(tournamentId) {
 
 function buildPayload({ pending, tournamentName, firstMatch, minutesLeft }) {
     const title = minutesLeft != null
-        ? `⏰ Cierra en ${minutesLeft} min`
-        : '⏰ Cierra el torneo pronto';
+        ? `⏰ Cerrás en ${minutesLeft} min`
+        : '⏰ El torneo cierra pronto';
     if (pending === 1 && firstMatch) {
         return {
             title,
-            body: `${firstMatch.home_team} vs ${firstMatch.away_team} — todavía no pronosticaste`,
+            body: `${firstMatch.home_team} vs ${firstMatch.away_team} — si no apostás, regalás puntos.`,
             url: '/apuestas',
             icon: '/favicon.svg',
         };
@@ -40,8 +40,8 @@ function buildPayload({ pending, tournamentName, firstMatch, minutesLeft }) {
     return {
         title,
         body: tournamentName
-            ? `${tournamentName}: te faltan ${pending} pronóstico${pending === 1 ? '' : 's'}`
-            : `Te faltan ${pending} pronóstico${pending === 1 ? '' : 's'} — entrá antes del cierre`,
+            ? `Tenés ${pending} sin cargar en ${tournamentName}. Ahora o nunca.`
+            : `Tenés ${pending} pronóstico${pending === 1 ? '' : 's'} sin cargar. Ahora o nunca.`,
         url: '/apuestas',
         icon: '/favicon.svg',
     };
@@ -124,8 +124,8 @@ async function runCutoffReminders() {
 
             if (row.whatsapp_number && row.whatsapp_consent) {
                 const smsBody = pending === 1
-                    ? `⏰ ${t.tournament_name}: te falta 1 pronóstico — tenés ${minutesLeft} min para cargarlo 👉 prodecaballito.com/apuestas`
-                    : `⏰ ${t.tournament_name}: te faltan ${pending} pronósticos — tenés ${minutesLeft} min para cargarlos 👉 prodecaballito.com/apuestas`;
+                    ? `⏰ En ${minutesLeft} min cierra ${t.tournament_name}. 1 pronóstico sin cargar 👉 prodecaballito.com/apuestas`
+                    : `⏰ En ${minutesLeft} min cierra ${t.tournament_name}. Te faltan ${pending} pronósticos 👉 prodecaballito.com/apuestas`;
                 await sendSMSWithRetry({ to: row.whatsapp_number, body: smsBody })
                     .catch(err => console.error(`[cutoff-reminder] sms failed (after retries) user=${row.user_id}:`, err.message));
             }

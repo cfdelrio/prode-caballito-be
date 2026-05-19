@@ -27,7 +27,7 @@ exports.schedulerService = {
     },
     async getPendingJobs() {
         const result = await connection_1.db.query(`
-      SELECT sj.*, m.home_team, m.away_team, m.start_time, m.halftime_minutes
+      SELECT sj.*, m.home_team, m.away_team, m.start_time, m.halftime_minutes, m.tournament_id
       FROM scheduled_jobs sj
       JOIN matches m ON sj.match_id = m.id
       WHERE sj.status = 'pending' AND sj.scheduled_for <= NOW()
@@ -40,8 +40,93 @@ exports.schedulerService = {
             awayTeam: row.away_team,
             startTime: row.start_time,
             halftimeMinutes: row.halftime_minutes,
+            tournamentId: row.tournament_id || null,
             type: row.job_type === 'kickoff' ? 'kickoff' : 'second_half',
         }));
+    },
+    async _sendPlanillaCierreEmails(tournamentId, firstMatchId) {
+        const { sendEmail: _sendEmail, sendPlanillaCierreEmail } = require('../services/email');
+        const tournamentRes = await connection_1.db.query(
+            `SELECT name FROM tournaments WHERE id = $1`, [tournamentId]
+        );
+        if (tournamentRes.rows.length === 0) return;
+        const torneoName = tournamentRes.rows[0].name;
+
+        // Only fire for the earliest kickoff of this tournament (idempotency)
+        const firstRes = await connection_1.db.query(
+            `SELECT MIN(sj.scheduled_for) AS earliest
+             FROM scheduled_jobs sj
+             JOIN matches m ON m.id = sj.match_id
+             WHERE m.tournament_id = $1 AND sj.job_type = 'kickoff'`,
+            [tournamentId]
+        );
+        const earliestKickoffRes = await connection_1.db.query(
+            `SELECT id FROM scheduled_jobs WHERE match_id = $1 AND job_type = 'kickoff'`, [firstMatchId]
+        );
+        // Check if this match is the first kickoff of the tournament
+        const isFirstKickoff = await connection_1.db.query(
+            `SELECT 1 FROM scheduled_jobs sj
+             JOIN matches m ON m.id = sj.match_id
+             WHERE m.tournament_id = $1 AND sj.job_type = 'kickoff'
+               AND sj.scheduled_for < (SELECT scheduled_for FROM scheduled_jobs WHERE match_id = $2 AND job_type = 'kickoff')
+             LIMIT 1`,
+            [tournamentId, firstMatchId]
+        );
+        if (isFirstKickoff.rows.length > 0) return; // not the first kickoff
+
+        // Get all planillas for this tournament
+        const planillasRes = await connection_1.db.query(
+            `SELECT p.id AS planilla_id, p.nombre_planilla, u.id AS user_id, u.nombre, u.email
+             FROM planillas p
+             JOIN users u ON u.id = p.user_id
+             WHERE p.tournament_id = $1 AND u.email IS NOT NULL AND u.email != ''`,
+            [tournamentId]
+        );
+        if (planillasRes.rows.length === 0) return;
+
+        const matchesRes = await connection_1.db.query(
+            `SELECT id, home_team, away_team, start_time FROM matches
+             WHERE tournament_id = $1 ORDER BY start_time ASC`,
+            [tournamentId]
+        );
+        const allMatches = matchesRes.rows;
+
+        for (const pl of planillasRes.rows) {
+            // Idempotency: skip if already sent
+            const idempRes = await connection_1.db.query(
+                `INSERT INTO reminder_sent (user_id, match_id, reminder_type)
+                 VALUES ($1, $2, 'planilla_cierre')
+                 ON CONFLICT (user_id, match_id, reminder_type) DO NOTHING
+                 RETURNING user_id`,
+                [pl.user_id, firstMatchId]
+            ).catch(() => ({ rows: [] }));
+            if (idempRes.rows.length === 0) continue;
+
+            const betsRes = await connection_1.db.query(
+                `SELECT b.match_id, b.goles_local, b.goles_visitante
+                 FROM bets b
+                 WHERE b.planilla_id = $1`,
+                [pl.planilla_id]
+            );
+            const betMap = {};
+            for (const b of betsRes.rows) betMap[b.match_id] = b;
+
+            const matches = allMatches.map(m => ({
+                home_team: m.home_team,
+                away_team: m.away_team,
+                goles_local: betMap[m.id]?.goles_local ?? null,
+                goles_visitante: betMap[m.id]?.goles_visitante ?? null,
+            }));
+
+            await sendPlanillaCierreEmail({
+                userEmail: pl.email,
+                userName: pl.nombre,
+                planillaNombre: pl.nombre_planilla,
+                torneoName,
+                matches,
+            }).catch(e => console.error(`[scheduler] planilla-cierre email error user=${pl.user_id}:`, e.message));
+        }
+        console.log(`[scheduler] planilla-cierre emails sent for tournament=${tournamentId}`);
     },
     async markJobCompleted(matchId, jobType) {
         await connection_1.db.query(`
@@ -64,18 +149,20 @@ exports.schedulerService = {
           JOIN bets b ON b.planilla_id = p.id AND b.match_id = $1
           GROUP BY u.id, u.whatsapp_number, u.whatsapp_consent
         `, [job.matchId]);
-                const label = job.type === 'kickoff' ? '¡Empieza!' : '¡Segundo tiempo!';
+                const isKickoff = job.type === 'kickoff';
                 for (const user of betters.rows) {
                     const hasBet = user.goles_local != null && user.goles_visitante != null;
                     const score = hasBet ? `${user.goles_local}-${user.goles_visitante}` : null;
                     const smsBody = hasBet
-                        ? `⚽ ${label} ${job.homeTeam} vs ${job.awayTeam} — tu pronóstico: ${score} 👉 prodecaballito.com`
-                        : `⚽ ${label} ${job.homeTeam} vs ${job.awayTeam} 👉 prodecaballito.com`;
+                        ? `${isKickoff ? '🟢 ¡Arrancó!' : '⏱️ ¡Segundo tiempo!'} ${job.homeTeam} vs ${job.awayTeam} — pronóstico: ${score} 👉 prodecaballito.com`
+                        : `${isKickoff ? '🟢 ¡Arrancó!' : '⏱️ ¡Segundo tiempo!'} ${job.homeTeam} vs ${job.awayTeam} 👉 prodecaballito.com`;
                     const pushPayload = {
-                        title: label,
+                        title: isKickoff
+                            ? `🟢 ¡Arrancó! ${job.homeTeam} vs ${job.awayTeam}`
+                            : `⏱️ ¡Segundo tiempo! ${job.homeTeam} vs ${job.awayTeam}`,
                         body: hasBet
-                            ? `${job.homeTeam} vs ${job.awayTeam} — tu pronóstico: ${score}`
-                            : `${job.homeTeam} vs ${job.awayTeam}`,
+                            ? (isKickoff ? `Tu pronóstico: ${score}. Que sea exacto 🎯` : `Tu pronóstico: ${score} — 45 min más.`)
+                            : (isKickoff ? 'Seguí el partido en vivo.' : 'El segundo tiempo arrancó.'),
                         url: '/apuestas',
                         icon: '/favicon.svg',
                     };
@@ -93,6 +180,13 @@ exports.schedulerService = {
                 }
                 await this.markJobCompleted(job.matchId, job.type);
                 console.log(`[scheduler] Completed ${job.type} job for match ${job.matchId}: ${betters.rows.length} users notified`);
+
+                // On the first kickoff of a tournament, send planilla cierre email as receipt
+                if (job.type === 'kickoff' && job.tournamentId) {
+                    setImmediate(() => this._sendPlanillaCierreEmails(job.tournamentId, job.matchId).catch(e =>
+                        console.error('[scheduler] planilla-cierre emails error:', e.message)
+                    ));
+                }
             }
             catch (error) {
                 console.error(`Error processing job for match ${job.matchId}:`, error);

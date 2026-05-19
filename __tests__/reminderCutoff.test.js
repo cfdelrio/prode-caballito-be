@@ -40,20 +40,20 @@ beforeEach(() => {
 
 describe('buildPayload', () => {
   it('mensaje específico cuando falta 1 partido y hay firstMatch', () => {
-    const p = buildPayload({ pending: 1, firstMatch: { home_team: 'ARG', away_team: 'BRA' } })
-    expect(p.title).toMatch(/Cierra/)
-    expect(p.body).toBe('ARG vs BRA — todavía no pronosticaste')
+    const p = buildPayload({ pending: 1, firstMatch: { home_team: 'ARG', away_team: 'BRA' }, minutesLeft: 25 })
+    expect(p.title).toMatch(/Cerrás/)
+    expect(p.body).toBe('ARG vs BRA — si no apostás, regalás puntos.')
     expect(p.url).toBe('/apuestas')
   })
 
   it('mensaje con nombre del torneo cuando faltan varios', () => {
     const p = buildPayload({ pending: 3, tournamentName: 'Mundial 2026', firstMatch: null })
-    expect(p.body).toBe('Mundial 2026: te faltan 3 pronósticos')
+    expect(p.body).toBe('Tenés 3 sin cargar en Mundial 2026. Ahora o nunca.')
   })
 
   it('mensaje genérico si no hay nombre de torneo y faltan varios', () => {
     const p = buildPayload({ pending: 2, tournamentName: null, firstMatch: null })
-    expect(p.body).toBe('Te faltan 2 pronósticos — entrá antes del cierre')
+    expect(p.body).toBe('Tenés 2 pronósticos sin cargar. Ahora o nunca.')
   })
 })
 

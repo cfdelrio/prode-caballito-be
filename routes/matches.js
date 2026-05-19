@@ -289,8 +289,8 @@ async function _notifyMatchRescheduled(matchId, match) {
     const awayTeam = match.away_team;
 
     const payload = {
-        title: '📅 Partido reprogramado',
-        body: `${homeTeam} vs ${awayTeam} — nuevo horario: ${formatted}`,
+        title: '📅 Cambio de horario',
+        body: `${homeTeam} vs ${awayTeam} ahora juega el ${formatted}. Revisá tu pronóstico.`,
         icon: 'calendar',
     };
 
@@ -434,8 +434,8 @@ async function actualizarRanking(matchId = null) {
             const overtaker = newByPos.get(prevPos);
             if (overtaker && overtaker.planilla_id !== row.planilla_id) {
                 const payload = {
-                    title: '⚠️ Te pasaron en el ranking',
-                    body: `${overtaker.nombre} te pasó. Ahora estás #${row.position} en "${row.nombre_planilla}"`.trim(),
+                    title: `👊 ${overtaker.nombre} te bajó del #${prevPos}`,
+                    body: `Ahora estás #${row.position}. Próximo partido, tu revancha.`,
                     icon: 'trophy',
                 };
                 pushToUser(row.user_id, { title: payload.title, body: payload.body }).catch(err =>
@@ -462,10 +462,17 @@ async function actualizarRanking(matchId = null) {
                     [row.user_id, matchId]
                 ).catch(() => ({ rows: [] }));
                 if (inserted.rows.length > 0) {
-                    const gapStr = gap === 1 ? '1 pt' : `${gap} pts`;
+                    const nearPodioTitle = gap === 1 ? '🔥 A 1 punto del podio'
+                        : gap <= 3 ? `🎯 A ${gap} pts del podio`
+                        : '📊 Zona de podio';
+                    const nearPodioBody = gap === 1
+                        ? `Un exacto te puede meter en el top 3 de "${row.nombre_planilla}".`
+                        : gap <= 3
+                        ? `Estás muy cerca del #3. Próxima fecha.`
+                        : `A ${gap} pts del #3 en "${row.nombre_planilla}". Tu momento llega.`;
                     const payload = {
-                        title: '🎯 Cerca del podio',
-                        body: `Estás a ${gapStr} del puesto #3 en "${row.nombre_planilla}". ¡La próxima fecha podés entrar al podio!`.trim(),
+                        title: nearPodioTitle,
+                        body: nearPodioBody,
                         icon: 'trophy',
                     };
                     pushToUser(row.user_id, { title: payload.title, body: payload.body }).catch(err =>
@@ -486,17 +493,31 @@ function buildRankingChangePayload({ prevPos, newPos, planillaNombre }) {
     const board = planillaNombre ? `en "${planillaNombre}"` : '';
     if (prevPos == null) {
         return {
-            title: '⭐ ¡Entraste al ranking!',
-            body: `Arrancás en el puesto #${newPos} ${board}`.trim(),
+            title: '⭐ ¡Estás en el ranking!',
+            body: `Arrancás #${newPos} ${board}. El podio te espera.`.trim(),
             icon: 'trophy',
         };
     }
     if (prevPos > newPos) {
-        const cambio = prevPos - newPos;
-        const noun = cambio > 1 ? 'posiciones' : 'posición';
+        const delta = prevPos - newPos;
+        if (newPos <= 3) {
+            const medal = newPos === 1 ? '🥇' : newPos === 2 ? '🥈' : '🥉';
+            return {
+                title: `${medal} Estás en el podio`,
+                body: `Pasaste ${delta} ${delta === 1 ? 'persona' : 'personas'}. Seguís así.`,
+                icon: 'trophy',
+            };
+        }
+        if (delta >= 5) {
+            return {
+                title: '📈 ¡Qué remontada!',
+                body: `+${delta} puestos de un saque. Ahora sos #${newPos} ${board}`.trim(),
+                icon: 'trophy',
+            };
+        }
         return {
-            title: '🚀 ¡Subiste en el ranking!',
-            body: `Avanzaste ${cambio} ${noun}. Ahora estás #${newPos} ${board}`.trim(),
+            title: '📈 Subiste',
+            body: `+${delta} ${delta === 1 ? 'posición' : 'posiciones'} — sos #${newPos} ${board}`.trim(),
             icon: 'trophy',
         };
     }

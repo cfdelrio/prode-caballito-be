@@ -46,12 +46,17 @@ async function _notifyNewLeader({ rankingRows, prevLeader, match, resultLocal, r
     const newLeader = rankingRows[0] || null;
     if (!newLeader || !prevLeader || newLeader.user_id === prevLeader.user_id) return;
 
+    const prevName = prevLeader?.nombre || null;
+    const pushBody = prevName
+        ? `Le sacaste el #1 a ${prevName}. Con ${newLeader.puntos_totales} pts.`
+        : `Con ${newLeader.puntos_totales} pts estás en el puesto #1 — ¡no lo sueltes!`;
+
     await db.query(
         `INSERT INTO notifications (user_id, type, payload, status, sent_at)
          VALUES ($1, $2, $3, $4, NOW())`,
         [newLeader.user_id, 'ranking', JSON.stringify({
             title: '🔥 ¡Sos el nuevo líder!',
-            body: `Con ${newLeader.puntos_totales} pts estás en el puesto #1`
+            body: pushBody,
         }), 'sent']
     ).catch(e => console.error('Notification new leader error:', e.message));
 
@@ -67,14 +72,16 @@ async function _notifyNewLeader({ rankingRows, prevLeader, match, resultLocal, r
 
     await pushToUser(newLeader.user_id, {
         title: '🔥 ¡Sos el nuevo líder!',
-        body: `Con ${newLeader.puntos_totales} pts estás en el puesto #1 — ¡no lo sueltes!`,
+        body: pushBody,
         url: '/ranking',
         icon: '/favicon.svg',
     }).catch(e => console.error('[push] new leader error:', e.message));
 
     if (newLeader.whatsapp_number && newLeader.whatsapp_consent) {
-        const body = `🔥 ¡Sos el nuevo líder del PRODE Caballito! Con ${newLeader.puntos_totales} pts estás en el puesto #1. ¡No lo sueltes! 👉 prodecaballito.com/ranking`;
-        await sendSMS({ to: newLeader.whatsapp_number, body })
+        const smsBody = prevName
+            ? `👑 ¡Sos el nuevo líder! Le sacaste el #1 a ${prevName}. Tenés ${newLeader.puntos_totales} pts. 👉 prodecaballito.com/ranking`
+            : `🔥 ¡Sos el nuevo líder del PRODE Caballito! Con ${newLeader.puntos_totales} pts estás en el puesto #1. ¡No lo sueltes! 👉 prodecaballito.com/ranking`;
+        await sendSMS({ to: newLeader.whatsapp_number, body: smsBody })
             .catch(e => console.error('[sms] new leader error:', e.message));
     }
 }
@@ -101,10 +108,18 @@ async function _notifyBetResults({ bets, rankingMap, match, resultLocal, resultV
                 { resultado_local: resultLocal, resultado_visitante: resultVisitante }
             );
 
-            const title = score.puntos > 0 ? '⚽ ¡Obtuviste puntos!' : '⚽ Resultado publicado';
-            const body = score.puntos > 0
-                ? `${match.home_team} ${resultLocal}-${resultVisitante} ${match.away_team}: +${score.puntos}pts`
-                : `${match.home_team} ${resultLocal}-${resultVisitante} ${match.away_team}`;
+            const isExacto = bet.goles_local === resultLocal && bet.goles_visitante === resultVisitante;
+            let title, body;
+            if (isExacto) {
+                title = `🎯 ¡Exacto! +${score.puntos} pts`;
+                body = `${match.home_team} ${resultLocal}–${resultVisitante} ${match.away_team}`;
+            } else if (score.puntos > 0) {
+                title = `✅ Acertaste el ganador. +${score.puntos} pts`;
+                body = `${match.home_team} ${resultLocal}–${resultVisitante} ${match.away_team}`;
+            } else {
+                title = '😬 Esta no fue';
+                body = `${match.home_team} ${resultLocal}–${resultVisitante} ${match.away_team} — pronóstico: ${bet.goles_local}-${bet.goles_visitante}`;
+            }
 
             await db.query(
                 `INSERT INTO notifications (user_id, match_id, type, payload, status, sent_at)
@@ -126,8 +141,10 @@ async function _notifyBetResults({ bets, rankingMap, match, resultLocal, resultV
             }).catch(e => console.error(`Result email error for ${userId}:`, e.message));
 
             if (userRanking.whatsapp_number && userRanking.whatsapp_consent) {
-                const body = `⚽ ${match.home_team} ${resultLocal}-${resultVisitante} ${match.away_team}\n🎯 Tu pronóstico: ${bet.goles_local}-${bet.goles_visitante} → +${score.puntos}pts\n🏆 Estás #${userRanking.position} en el ranking\n👉 prodecaballito.com/ranking`;
-                await sendSMS({ to: userRanking.whatsapp_number, body })
+                const smsBody = score.puntos > 0
+                    ? `⚽ ${match.home_team} ${resultLocal}–${resultVisitante} ${match.away_team} | Tu pronóstico: ${bet.goles_local}-${bet.goles_visitante} → +${score.puntos}pts\nEstás #${userRanking.position} en el ranking 👉 prodecaballito.com/ranking`
+                    : `⚽ ${match.home_team} ${resultLocal}–${resultVisitante} ${match.away_team} | Tu pronóstico: ${bet.goles_local}-${bet.goles_visitante} → 0 pts\nSeguís #${userRanking.position} 👉 prodecaballito.com/ranking`;
+                await sendSMS({ to: userRanking.whatsapp_number, body: smsBody })
                     .catch(e => console.error(`[sms] result error for ${userId}:`, e.message));
             }
         } catch (betErr) {
@@ -137,9 +154,30 @@ async function _notifyBetResults({ bets, rankingMap, match, resultLocal, resultV
 }
 
 async function _pushBroadcast({ match, resultLocal, resultVisitante }) {
+    let exactosCount = 0;
+    try {
+        const exactosRes = await db.query(
+            `SELECT COUNT(*) AS cnt FROM bets
+             WHERE match_id = $1 AND goles_local = $2 AND goles_visitante = $3`,
+            [match.id, resultLocal, resultVisitante]
+        );
+        exactosCount = parseInt(exactosRes.rows[0]?.cnt || '0');
+    } catch (e) {
+        console.error('[push-broadcast] exactos query error:', e.message);
+    }
+
+    let broadcastBody;
+    if (exactosCount === 0) {
+        broadcastBody = 'Nadie lo acertó exacto 🤯';
+    } else if (exactosCount === 1) {
+        broadcastBody = '¡Solo 1 lo acertó exacto! ¿Fuiste vos?';
+    } else {
+        broadcastBody = `¡${exactosCount} exactos! ¿Sos uno?`;
+    }
+
     await pushToAll({
         title: `⚽ ${match.home_team} ${resultLocal}–${resultVisitante} ${match.away_team}`,
-        body: 'Resultado publicado — mirá cuántos puntos sumaste',
+        body: broadcastBody,
         url: '/ranking',
         icon: '/favicon.svg',
     }).catch(e => console.error('[push] broadcast error:', e.message));

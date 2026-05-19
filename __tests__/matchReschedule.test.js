@@ -96,10 +96,10 @@ describe('PUT /matches/:id — reschedule notification', () => {
 
     expect(pushToUser).toHaveBeenCalledTimes(2)
     expect(pushToUser).toHaveBeenCalledWith(USER_A, expect.objectContaining({
-      title: '📅 Partido reprogramado',
+      title: '📅 Cambio de horario',
     }))
     expect(pushToUser).toHaveBeenCalledWith(USER_B, expect.objectContaining({
-      title: '📅 Partido reprogramado',
+      title: '📅 Cambio de horario',
     }))
     expect(sendSMSWithRetry).not.toHaveBeenCalled()
   })

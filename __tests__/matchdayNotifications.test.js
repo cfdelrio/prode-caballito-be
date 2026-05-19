@@ -152,7 +152,7 @@ describe('_notifyMatchdayClose — resumen post-fecha', () => {
     await recalcMatchday(MD_ID)
 
     const summaryCalls = pushToUser.mock.calls.filter(c =>
-      c[1]?.title?.includes('cerrada')
+      c[1]?.title?.includes('Fecha 1')
     )
     expect(summaryCalls.length).toBeGreaterThanOrEqual(2)
   })
@@ -199,7 +199,7 @@ describe('_notifyMatchdayClose — récord personal', () => {
     await recalcMatchday(MD_ID)
 
     const recordCalls = pushToUser.mock.calls.filter(c =>
-      c[1]?.title === '🔥 ¡Récord personal!'
+      c[1]?.title === '🔥 Nuevo récord personal'
     )
     expect(recordCalls.length).toBe(1)
     expect(recordCalls[0][0]).toBe(USER_A)
@@ -222,7 +222,7 @@ describe('_notifyMatchdayClose — récord personal', () => {
     await recalcMatchday(MD_ID)
 
     const recordCalls = pushToUser.mock.calls.filter(c =>
-      c[1]?.title === '🔥 ¡Récord personal!'
+      c[1]?.title === '🔥 Nuevo récord personal'
     )
     expect(recordCalls).toHaveLength(0)
   })
@@ -252,7 +252,7 @@ describe('_notifyMatchdayClose — streak de exactos', () => {
     await recalcMatchday(MD_ID)
 
     const streakCalls = pushToUser.mock.calls.filter(c =>
-      c[1]?.title?.includes('exactos seguidos')
+      c[1]?.title?.includes('exactos')
     )
     expect(streakCalls.length).toBe(1)
     expect(streakCalls[0][1].title).toContain('3 exactos')
@@ -281,7 +281,7 @@ describe('_notifyMatchdayClose — streak de exactos', () => {
     await recalcMatchday(MD_ID)
 
     const streakCalls = pushToUser.mock.calls.filter(c =>
-      c[1]?.title?.includes('exactos seguidos')
+      c[1]?.title?.includes('exactos')
     )
     expect(streakCalls).toHaveLength(0)
   })

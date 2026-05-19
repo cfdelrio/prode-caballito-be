@@ -43,9 +43,10 @@ async function runPaymentReminders() {
 
         if (insertRes.rows.length === 0) { skipped++; continue }
 
+        const daysLeft = Math.max(1, Math.ceil((new Date(p.primer_partido).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
         const payload = {
-            title: '💸 Planilla sin pagar',
-            body: `Tu planilla "${p.nombre_planilla}" para ${p.torneo_name} no está paga. Sin pago no entrás al ranking.`,
+            title: `💸 "${p.nombre_planilla}" sin pagar`,
+            body: `El torneo arranca en ${daysLeft} día${daysLeft === 1 ? '' : 's'}. Sin pago no sumás puntos.`,
             icon: 'warning',
         }
 
@@ -70,7 +71,7 @@ async function runPaymentReminders() {
         if (p.whatsapp_number && p.whatsapp_consent) {
             sendSMSWithRetry({
                 to: p.whatsapp_number,
-                body: `💸 Tu planilla "${p.nombre_planilla}" para ${p.torneo_name} no está paga. Sin pago no entrás al ranking 👉 prodecaballito.com`,
+                body: `💸 "${p.nombre_planilla}" para ${p.torneo_name} sigue sin pagar. Arrancan en ${daysLeft} día${daysLeft === 1 ? '' : 's'}. 👉 prodecaballito.com/planillas`,
             }).catch(err => console.error(`[payment-reminder] SMS failed user=${p.user_id}:`, err.message))
         }
 
