@@ -40,6 +40,7 @@ jobs:
           DB_USER:     ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           NODE_ENV:    production
+          JWT_SECRET:  ${{ secrets.JWT_SECRET }}
 
       - name: Done
         if: success()
