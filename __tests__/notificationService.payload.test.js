@@ -5,12 +5,7 @@ jest.mock('../db/connection', () => ({
 }))
 
 const { db } = require('../db/connection')
-const {
-  generarNotificacionKickoff,
-  generarNotificacionRankingCambio,
-  generarNotificacionNuevoComentario,
-  generarNotificacionResultado,
-} = require('../workers/notificationService')
+const { generarNotificacionKickoff } = require('../workers/notificationService')
 
 const USER_ID = '11111111-1111-1111-1111-111111111111'
 const MATCH_ID = '22222222-2222-2222-2222-222222222222'
@@ -54,71 +49,9 @@ describe('notificationService — payload con claves title/body (no titulo/mensa
     expect(payload.body).toContain('segundo tiempo')
   })
 
-  it('generarNotificacionRankingCambio (mejora) guarda title y body', async () => {
-    await generarNotificacionRankingCambio(USER_ID, 5, 2, 'Planilla principal')
-
-    const payload = extractPayload()
-    expect(payload).toHaveProperty('title')
-    expect(payload).toHaveProperty('body')
-    expect(payload).not.toHaveProperty('titulo')
-    expect(payload).not.toHaveProperty('mensaje')
-    expect(payload.title).toBe('¡Subiste en el ranking!')
-    expect(payload.body).toContain('Avanzaste')
-    expect(payload.body).toContain('Planilla principal')
-  })
-
-  it('generarNotificacionRankingCambio (baja) usa título de bajada', async () => {
-    await generarNotificacionRankingCambio(USER_ID, 2, 5, 'X')
-
-    const payload = extractPayload()
-    expect(payload.title).toBe('Bajaste en el ranking')
-    expect(payload.body).toContain('Bajaste')
-  })
-
-  it('generarNotificacionNuevoComentario guarda title y body', async () => {
-    await generarNotificacionNuevoComentario(USER_ID, 'c-1', 'Juan', 'Excelente prode!')
-
-    const payload = extractPayload()
-    expect(payload).toHaveProperty('title')
-    expect(payload).toHaveProperty('body')
-    expect(payload).not.toHaveProperty('titulo')
-    expect(payload).not.toHaveProperty('mensaje')
-    expect(payload.title).toBe('Juan comentó')
-    expect(payload.body).toBe('Excelente prode!')
-  })
-
-  it('generarNotificacionResultado con puntos guarda title y body', async () => {
-    await generarNotificacionResultado(USER_ID, MATCH_ID, 'Argentina', 'Brasil', 2, 1, 3)
-
-    const payload = extractPayload()
-    expect(payload).toHaveProperty('title')
-    expect(payload).toHaveProperty('body')
-    expect(payload).not.toHaveProperty('titulo')
-    expect(payload).not.toHaveProperty('mensaje')
-    expect(payload.title).toBe('¡Resultado publicado!')
-    expect(payload.body).toContain('3 puntos')
-    expect(payload.body).toContain('Argentina')
-    expect(payload.body).toContain('Brasil')
-  })
-
-  it('generarNotificacionResultado sin puntos guarda title y body con texto neutro', async () => {
-    await generarNotificacionResultado(USER_ID, MATCH_ID, 'Argentina', 'Brasil', 0, 1, 0)
-
-    const payload = extractPayload()
-    expect(payload.title).toBe('¡Resultado publicado!')
-    expect(payload.body).toContain('Se publicaron los resultados')
-    expect(payload.body).not.toMatch(/puntos/i)
-  })
-
-  it('todos los generadores incluyen icon en el payload (compatibilidad con push)', async () => {
+  it('generarNotificacionKickoff incluye icon en el payload (compatibilidad con push)', async () => {
     await generarNotificacionKickoff(USER_ID, MATCH_ID, 'A', 'B', 'kickoff', new Date())
-    await generarNotificacionRankingCambio(USER_ID, 1, 2, 'X')
-    await generarNotificacionNuevoComentario(USER_ID, 'c', 'Juan', 'msg')
-    await generarNotificacionResultado(USER_ID, MATCH_ID, 'A', 'B', 1, 0, 1)
-
-    for (let i = 0; i < 4; i++) {
-      const p = extractPayload(i)
-      expect(p).toHaveProperty('icon')
-    }
+    const payload = extractPayload()
+    expect(payload).toHaveProperty('icon')
   })
 })

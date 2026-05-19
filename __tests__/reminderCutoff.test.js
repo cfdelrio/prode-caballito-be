@@ -186,10 +186,12 @@ describe('runCutoffReminders — tournament-level', () => {
 
 describe('runCutoffReminders — standalone matches', () => {
   it('notifica a usuarios con planilla y bet faltante en match sin tournament_id', async () => {
+    const P1 = '55555555-5555-5555-5555-555555555555'
     db.query
       .mockResolvedValueOnce({ rows: [] }) // tournaments
       .mockResolvedValueOnce({ rows: [
-        { id: M2, home_team: 'ARG', away_team: 'BRA', time_cutoff: new Date(Date.now() + 30 * 60 * 1000) },
+        { id: M2, home_team: 'ARG', away_team: 'BRA',
+          time_cutoff: new Date(Date.now() + 30 * 60 * 1000), planilla_id: P1 },
       ]})
       .mockResolvedValueOnce({ rows: [{ user_id: U1,
         whatsapp_number: '+5491155996222', whatsapp_consent: true }] }) // missing bets + user
@@ -203,6 +205,26 @@ describe('runCutoffReminders — standalone matches', () => {
       to: '+5491155996222',
       body: expect.stringContaining('ARG vs BRA'),
     }))
+  })
+
+  it('filtra missing bets por planilla_id del match (no notifica a planillas ajenas)', async () => {
+    const P1 = '55555555-5555-5555-5555-555555555555'
+    db.query
+      .mockResolvedValueOnce({ rows: [] }) // tournaments
+      .mockResolvedValueOnce({ rows: [
+        { id: M2, home_team: 'ARG', away_team: 'BRA',
+          time_cutoff: new Date(Date.now() + 30 * 60 * 1000), planilla_id: P1 },
+      ]})
+      .mockResolvedValueOnce({ rows: [] }) // missing bets — ninguna planilla coincide
+      .mockResolvedValueOnce({ rows: [] }) // no más queries
+
+    const out = await runCutoffReminders()
+
+    expect(out.users_notified).toBe(0)
+    expect(pushToUser).not.toHaveBeenCalled()
+    // Verifica que la query incluyó match.planilla_id como parámetro
+    const missingBetsCall = db.query.mock.calls[2]
+    expect(missingBetsCall[1]).toContain(P1)
   })
 })
 
