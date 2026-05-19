@@ -57,17 +57,39 @@ const pushToUser = async (userId, payload) => {
 /**
  * Broadcast a push notification to all subscribed users.
  */
+/**
+ * Broadcast a push notification to all subscribed users.
+ *
+ * Uses keyset pagination over `id` to avoid loading the whole table into Lambda
+ * memory when the subscriber count grows. The page size is bounded but tunable
+ * via env var (PUSH_BROADCAST_BATCH).
+ */
 const pushToAll = async (payload) => {
-    const res = await db.query('SELECT * FROM push_subscriptions');
+    const batchSize = Math.max(1, parseInt(process.env.PUSH_BROADCAST_BATCH || '100', 10));
     let sent = 0, failed = 0;
-    for (const sub of res.rows) {
-        try {
-            await sendPush(sub, payload);
-            sent++;
-        } catch (e) {
-            console.error(`Push broadcast failed for ${sub.user_id}:`, e.message);
-            failed++;
+    let afterId = null;
+    while (true) {
+        const res = afterId == null
+            ? await db.query(
+                'SELECT * FROM push_subscriptions ORDER BY id ASC LIMIT $1',
+                [batchSize]
+            )
+            : await db.query(
+                'SELECT * FROM push_subscriptions WHERE id > $1 ORDER BY id ASC LIMIT $2',
+                [afterId, batchSize]
+            );
+        if (res.rows.length === 0) break;
+        for (const sub of res.rows) {
+            try {
+                await sendPush(sub, payload);
+                sent++;
+            } catch (e) {
+                console.error(`Push broadcast failed for ${sub.user_id}:`, e.message);
+                failed++;
+            }
         }
+        afterId = res.rows[res.rows.length - 1].id;
+        if (res.rows.length < batchSize) break;
     }
     console.log(`[push] broadcast sent=${sent} failed=${failed}`);
     return { sent, failed };
