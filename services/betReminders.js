@@ -60,6 +60,17 @@ async function processBetReminders() {
                 );
             }
 
+            // In-app history: same title/body as push, with icon for the SW.
+            await db.query(
+                `INSERT INTO notifications (user_id, match_id, type, payload, status, sent_at)
+                 VALUES ($1, $2, 'bet_reminder', $3, 'sent', NOW())`,
+                [r.user_id, r.match_id, JSON.stringify({
+                    title: payload.title, body: payload.body, icon: 'soccer',
+                })]
+            ).catch(err =>
+                console.error(`[bet-reminders] notif insert failed user=${r.user_id} match=${r.match_id}:`, err.message)
+            );
+
             await db.query(
                 `UPDATE bet_reminders SET email_sent = true, sent_at = NOW() WHERE id = $1`,
                 [r.id]
