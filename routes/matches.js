@@ -338,7 +338,7 @@ async function actualizarRanking() {
     UPDATE ranking r SET position = ranked.position FROM ranked WHERE r.id = ranked.id
   `);
     const newResult = await connection_1.db.query(`
-    SELECT r.id, r.planilla_id, r.position, r.puntos_totales, p.user_id, u.nombre, u.email
+    SELECT r.id, r.planilla_id, r.position, r.puntos_totales, p.user_id, p.nombre_planilla, u.nombre, u.email
     FROM ranking r
     JOIN planillas p ON r.planilla_id = p.id
     JOIN users u ON p.user_id = u.id
@@ -354,8 +354,48 @@ async function actualizarRanking() {
             catch (err) {
                 console.error(`Failed to send email to ${row.email}:`, err);
             }
+            // In-app notification (only when the user is on the ranked board, i.e. position != null)
+            if (row.position != null) {
+                const payload = buildRankingChangePayload({
+                    prevPos,
+                    newPos: row.position,
+                    planillaNombre: row.nombre_planilla,
+                });
+                await connection_1.db.query(
+                    `INSERT INTO notifications (user_id, type, payload, status, sent_at)
+                     VALUES ($1, 'ranking_change', $2, 'sent', NOW())`,
+                    [row.user_id, JSON.stringify(payload)]
+                ).catch(err => console.error(`[ranking-notif] insert failed user=${row.user_id}:`, err.message));
+            }
         }
     }
+}
+
+function buildRankingChangePayload({ prevPos, newPos, planillaNombre }) {
+    const board = planillaNombre ? `en "${planillaNombre}"` : '';
+    if (prevPos == null) {
+        return {
+            title: '⭐ ¡Entraste al ranking!',
+            body: `Arrancás en el puesto #${newPos} ${board}`.trim(),
+            icon: 'trophy',
+        };
+    }
+    if (prevPos > newPos) {
+        const cambio = prevPos - newPos;
+        const noun = cambio > 1 ? 'posiciones' : 'posición';
+        return {
+            title: '🚀 ¡Subiste en el ranking!',
+            body: `Avanzaste ${cambio} ${noun}. Ahora estás #${newPos} ${board}`.trim(),
+            icon: 'trophy',
+        };
+    }
+    const cambio = newPos - prevPos;
+    const noun = cambio > 1 ? 'posiciones' : 'posición';
+    return {
+        title: '📉 Bajaste en el ranking',
+        body: `Bajaste ${cambio} ${noun}. Ahora estás #${newPos} ${board}`.trim(),
+        icon: 'trophy',
+    };
 }
 router.post('/recalculate-ranking', async (req, res) => {
     try {
@@ -369,4 +409,5 @@ router.post('/recalculate-ranking', async (req, res) => {
 });
 exports.default = router;
 exports.actualizarRanking = actualizarRanking;
+exports.buildRankingChangePayload = buildRankingChangePayload;
 //# sourceMappingURL=matches.js.map
