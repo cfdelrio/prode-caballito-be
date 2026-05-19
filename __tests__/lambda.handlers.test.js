@@ -53,6 +53,16 @@ jest.mock('../services/reminderCutoff', () => ({
   runCutoffReminders: mockRunCutoffReminders,
 }))
 
+const mockRunTournamentReminders = jest.fn().mockResolvedValue({ tournaments_in_window: 0, users_notified: 0, skipped: 0 })
+jest.mock('../services/reminderTournament', () => ({
+  runTournamentReminders: mockRunTournamentReminders,
+}))
+
+const mockRunPaymentReminders = jest.fn().mockResolvedValue({ planillas_found: 0, users_notified: 0, skipped: 0 })
+jest.mock('../services/reminderPayment', () => ({
+  runPaymentReminders: mockRunPaymentReminders,
+}))
+
 const mockSendWeeklyEmailBatch = jest.fn().mockResolvedValue({ sent: 0 })
 jest.mock('../routes/admin', () => ({
   sendWeeklyEmailBatch: mockSendWeeklyEmailBatch,
@@ -71,10 +81,17 @@ describe('Lambda EventBridge handlers', () => {
     expect(mockProcessBetReminders).toHaveBeenCalledTimes(1)
   })
 
-  it('prode.reminder-cutoff → llama runCutoffReminders y retorna 200', async () => {
+  it('prode.reminder-cutoff → llama runCutoffReminders + runTournamentReminders y retorna 200', async () => {
     const res = await handler({ source: 'prode.reminder-cutoff' }, fakeContext)
     expect(res.statusCode).toBe(200)
     expect(mockRunCutoffReminders).toHaveBeenCalledTimes(1)
+    expect(mockRunTournamentReminders).toHaveBeenCalledTimes(1)
+  })
+
+  it('prode.payment-reminder → llama runPaymentReminders y retorna 200', async () => {
+    const res = await handler({ source: 'prode.payment-reminder' }, fakeContext)
+    expect(res.statusCode).toBe(200)
+    expect(mockRunPaymentReminders).toHaveBeenCalledTimes(1)
   })
 
   it('prode.weekly → llama sendWeeklyEmailBatch y retorna 200', async () => {

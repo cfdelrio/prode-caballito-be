@@ -356,6 +356,120 @@ async function ensureMatchday(tournamentId, matchDate) {
   return res.rows[0];
 }
 
+async function _notifyMatchdayClose(rows, matchday, matchdayId) {
+  const { pushToUser } = require('../services/push');
+  const { sendPostMatchdayEmail } = require('../services/email');
+
+  const top = rows[0]; // already sorted desc by points
+  const totalPlanillas = rows.length;
+
+  // Query all user emails for the email notifications
+  const allUserIds = rows.map(r => r.user_id);
+  const emailsRes = await connection_1.db.query(
+    `SELECT id, email FROM users WHERE id = ANY($1::uuid[]) AND email IS NOT NULL AND email != ''`,
+    [allUserIds]
+  );
+  const emailMap = {};
+  for (const row of emailsRes.rows) emailMap[row.id] = row.email;
+
+  // Also query global ranking positions for each planilla
+  const rankingRes = await connection_1.db.query(
+    `SELECT p.user_id, r.position FROM ranking r
+     JOIN planillas p ON p.id = r.planilla_id
+     WHERE p.user_id = ANY($1::uuid[]) AND r.position IS NOT NULL`,
+    [allUserIds]
+  );
+  const globalPositionMap = {};
+  for (const row of rankingRes.rows) globalPositionMap[row.user_id] = row.position;
+
+  for (const r of rows) {
+    const userEmail = emailMap[r.user_id];
+    const globalPosition = globalPositionMap[r.user_id] || null;
+
+    // ── Resumen post-fecha ─────────────────────────────────────────────────
+    const summaryPayload = {
+      title: `🏁 ${matchday.name} cerrada`,
+      body: `Hiciste ${r.points} pts. ${top.user_id !== r.user_id ? `Top: ${top.user_name} con ${top.points} pts.` : '¡Ganaste la fecha!'}`,
+      icon: 'soccer',
+    };
+
+    pushToUser(r.user_id, { title: summaryPayload.title, body: summaryPayload.body }).catch(err =>
+      console.error(`[matchday-close] push failed user=${r.user_id}:`, err.message)
+    );
+    await connection_1.db.query(
+      `INSERT INTO notifications (user_id, type, payload, status, sent_at)
+       VALUES ($1, 'matchday_summary', $2, 'sent', NOW())`,
+      [r.user_id, JSON.stringify(summaryPayload)]
+    ).catch(err => console.error(`[matchday-close] summary insert failed user=${r.user_id}:`, err.message));
+
+    if (userEmail) {
+      sendPostMatchdayEmail({
+        userEmail,
+        userName: r.user_name,
+        matchdayName: matchday.name,
+        points: r.points,
+        rankInMatchday: r.rank,
+        globalPosition,
+        topName: top.user_name,
+        topPoints: top.points,
+        totalPlanillas,
+      }).catch(err => console.error(`[matchday-close] email failed user=${r.user_id}:`, err.message));
+    }
+
+    // ── Récord personal ────────────────────────────────────────────────────
+    const histRes = await connection_1.db.query(
+      `SELECT MAX(points) AS max_pts FROM scores_by_matchday
+       WHERE planilla_id = $1 AND matchday_id != $2`,
+      [r.planilla_id, matchdayId]
+    ).catch(() => ({ rows: [{ max_pts: null }] }));
+    const maxPts = histRes.rows[0]?.max_pts ?? null;
+    if (maxPts !== null && r.points > parseInt(maxPts)) {
+      const recordPayload = {
+        title: '🔥 ¡Récord personal!',
+        body: `${r.points} pts en ${matchday.name}, tu mejor performance.`,
+        icon: 'star',
+      };
+      pushToUser(r.user_id, { title: recordPayload.title, body: recordPayload.body }).catch(err =>
+        console.error(`[matchday-close] record push failed user=${r.user_id}:`, err.message)
+      );
+      await connection_1.db.query(
+        `INSERT INTO notifications (user_id, type, payload, status, sent_at)
+         VALUES ($1, 'personal_record', $2, 'sent', NOW())`,
+        [r.user_id, JSON.stringify(recordPayload)]
+      ).catch(err => console.error(`[matchday-close] record insert failed user=${r.user_id}:`, err.message));
+    }
+
+    // ── Streak de exactos ──────────────────────────────────────────────────
+    const streakRes = await connection_1.db.query(
+      `SELECT s.puntos_obtenidos FROM scores s
+       JOIN matches m ON s.match_id = m.id
+       WHERE s.planilla_id = $1 AND m.estado = 'finished'
+       ORDER BY m.start_time DESC LIMIT 10`,
+      [r.planilla_id]
+    ).catch(() => ({ rows: [] }));
+    let streak = 0;
+    for (const sr of streakRes.rows) {
+      if (sr.puntos_obtenidos >= 3) streak++;
+      else break;
+    }
+    if (streak > 0 && streak % 3 === 0) {
+      const streakPayload = {
+        title: `🎯 ¡${streak} exactos seguidos!`,
+        body: 'Sos imparable.',
+        icon: 'star',
+      };
+      pushToUser(r.user_id, { title: streakPayload.title, body: streakPayload.body }).catch(err =>
+        console.error(`[matchday-close] streak push failed user=${r.user_id}:`, err.message)
+      );
+      await connection_1.db.query(
+        `INSERT INTO notifications (user_id, type, payload, status, sent_at)
+         VALUES ($1, 'streak_exactos', $2, 'sent', NOW())`,
+        [r.user_id, JSON.stringify(streakPayload)]
+      ).catch(err => console.error(`[matchday-close] streak insert failed user=${r.user_id}:`, err.message));
+    }
+  }
+}
+
 async function recalcMatchday(matchdayId) {
   const mdRes = await connection_1.db.query('SELECT * FROM matchdays WHERE id = $1', [matchdayId]);
   if (mdRes.rows.length === 0) throw new Error('Matchday not found');
@@ -453,6 +567,11 @@ async function recalcMatchday(matchdayId) {
       } else if (matchday.winner_announced_at) {
         console.log(`[matchday] Winner ya notificado el ${matchday.winner_announced_at} — skip dedup`);
       } else {
+        // Post-matchday notifications: resumen + récord personal + streak de exactos
+        await _notifyMatchdayClose(rows, matchday, matchdayId).catch(err =>
+          console.error('[matchday] _notifyMatchdayClose failed:', err.message)
+        );
+
         const allUserIds = rows.map(r => r.user_id);
         const emailsRes = await connection_1.db.query(
           `SELECT id, email FROM users WHERE id = ANY($1::uuid[]) AND email IS NOT NULL AND email != ''`,

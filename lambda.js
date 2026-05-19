@@ -148,9 +148,14 @@ const handler = async (event, context) => {
     // EventBridge pre-cutoff reminder (every 10 min)
     if (event.source === 'prode.reminder-cutoff' || event['detail-type'] === 'reminder-cutoff') {
         const { runCutoffReminders } = require('./services/reminderCutoff');
-        const result = await runCutoffReminders();
-        console.log('[prode.reminder-cutoff] Result:', result);
-        return { statusCode: 200, body: JSON.stringify(result) };
+        const { runTournamentReminders } = require('./services/reminderTournament');
+        const [cutoffResult, tournamentResult] = await Promise.all([
+            runCutoffReminders(),
+            runTournamentReminders(),
+        ]);
+        console.log('[prode.reminder-cutoff] Result:', cutoffResult);
+        console.log('[prode.tournament-reminder] Result:', tournamentResult);
+        return { statusCode: 200, body: JSON.stringify({ cutoff: cutoffResult, tournament: tournamentResult }) };
     }
 
     // EventBridge scheduled jobs processor (kickoff/second_half + opt-in bet_reminders)
@@ -161,6 +166,14 @@ const handler = async (event, context) => {
         const brResult = await processBetReminders();
         console.log('[prode.process-jobs] Pending jobs processed. bet_reminders:', brResult);
         return { statusCode: 200, body: JSON.stringify({ success: true, bet_reminders: brResult }) };
+    }
+
+    // EventBridge daily: payment reminder for unpaid planillas
+    if (event.source === 'prode.payment-reminder' || event['detail-type'] === 'payment-reminder') {
+        const { runPaymentReminders } = require('./services/reminderPayment');
+        const result = await runPaymentReminders();
+        console.log('[prode.payment-reminder] Result:', result);
+        return { statusCode: 200, body: JSON.stringify(result) };
     }
 
     // Ad-hoc query: matches with cutoff in the next N minutes

@@ -143,6 +143,10 @@ router.put('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matc
             `, [result.rows[0].start_time, id]).catch(err =>
                 console.error(`[matches] bet_reminders reschedule failed for ${id}:`, err.message)
             );
+            // Notify users who bet on this match about the rescheduled time
+            _notifyMatchRescheduled(id, result.rows[0]).catch(err =>
+                console.error(`[matches] reschedule notify failed for ${id}:`, err.message)
+            );
         }
         res.json({ success: true, data: result.rows[0] });
     }
@@ -203,7 +207,7 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
         }
         await connection_1.db.query(`INSERT INTO audit_log (user_id, action, entity_type, entity_id, new_value, ip_address, user_agent)
        VALUES ($1, 'result_published', 'matches', $2, $3, $4, $5)`, [req.user.userId, matchId, JSON.stringify({ resultado_local, resultado_visitante }), req.ip, req.headers['user-agent']]);
-        await actualizarRanking();
+        await actualizarRanking(matchId);
         cache.invalidatePrefix('ranking:');
         cache.invalidatePrefix('matches:');
 
@@ -261,9 +265,56 @@ router.delete('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.u
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
-async function actualizarRanking() {
+async function _notifyMatchRescheduled(matchId, match) {
+    const { pushToUser } = require('../services/push');
+    const { sendSMSWithRetry } = require('../services/sms');
+
+    const bettersRes = await connection_1.db.query(
+        `SELECT DISTINCT u.id AS user_id, u.nombre, u.whatsapp_number, u.whatsapp_consent
+         FROM bets b
+         JOIN planillas p ON p.id = b.planilla_id
+         JOIN users u ON u.id = p.user_id
+         WHERE b.match_id = $1`,
+        [matchId]
+    );
+    if (bettersRes.rows.length === 0) return;
+
+    const newDate = new Date(match.start_time);
+    const formatted = newDate.toLocaleString('es-AR', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+        weekday: 'short', day: 'numeric', month: 'short',
+        hour: '2-digit', minute: '2-digit',
+    });
+    const homeTeam = match.home_team;
+    const awayTeam = match.away_team;
+
+    const payload = {
+        title: '📅 Partido reprogramado',
+        body: `${homeTeam} vs ${awayTeam} — nuevo horario: ${formatted}`,
+        icon: 'calendar',
+    };
+
+    for (const u of bettersRes.rows) {
+        pushToUser(u.user_id, { title: payload.title, body: payload.body }).catch(err =>
+            console.error(`[reschedule] push failed user=${u.user_id}:`, err.message)
+        );
+        await connection_1.db.query(
+            `INSERT INTO notifications (user_id, match_id, type, payload, status, sent_at)
+             VALUES ($1, $2, 'match_rescheduled', $3, 'sent', NOW())`,
+            [u.user_id, matchId, JSON.stringify(payload)]
+        ).catch(err => console.error(`[reschedule] insert failed user=${u.user_id}:`, err.message));
+        if (u.whatsapp_number && u.whatsapp_consent) {
+            sendSMSWithRetry({
+                to: u.whatsapp_number,
+                body: `📅 ${homeTeam} vs ${awayTeam} reprogramado: ${formatted} — prodecaballito.com/apuestas`,
+            }).catch(err => console.error(`[reschedule] SMS failed user=${u.user_id}:`, err.message));
+        }
+    }
+}
+
+async function actualizarRanking(matchId = null) {
     const prevResult = await connection_1.db.query(`
-    SELECT r.id, r.planilla_id, r.position, p.user_id, u.nombre, u.email
+    SELECT r.id, r.planilla_id, r.position, r.puntos_totales, p.user_id, u.nombre, u.email
     FROM ranking r
     JOIN planillas p ON r.planilla_id = p.id
     JOIN users u ON p.user_id = u.id
@@ -272,6 +323,7 @@ async function actualizarRanking() {
     for (const row of prevResult.rows) {
         prevRanking.set(row.planilla_id, {
             position: row.position,
+            puntos_totales: row.puntos_totales,
             user_id: row.user_id,
             nombre: row.nombre,
             email: row.email,
@@ -343,6 +395,14 @@ async function actualizarRanking() {
     JOIN planillas p ON r.planilla_id = p.id
     JOIN users u ON p.user_id = u.id
   `);
+    // Build position→row map for "te pasaron" and "cerca del podio" lookups
+    const newByPos = new Map();
+    for (const row of newResult.rows) {
+        if (row.position != null) newByPos.set(row.position, row);
+    }
+    const podio3 = newByPos.get(3);
+    const { pushToUser } = require('../services/push');
+
     for (const row of newResult.rows) {
         const prev = prevRanking.get(row.planilla_id);
         const prevPos = prev?.position || null;
@@ -366,6 +426,57 @@ async function actualizarRanking() {
                      VALUES ($1, 'ranking_change', $2, 'sent', NOW())`,
                     [row.user_id, JSON.stringify(payload)]
                 ).catch(err => console.error(`[ranking-notif] insert failed user=${row.user_id}:`, err.message));
+            }
+        }
+
+        // "Te pasaron en el ranking" — position worsened and we can identify who took the spot
+        if (prevPos != null && row.position != null && row.position > prevPos) {
+            const overtaker = newByPos.get(prevPos);
+            if (overtaker && overtaker.planilla_id !== row.planilla_id) {
+                const payload = {
+                    title: '⚠️ Te pasaron en el ranking',
+                    body: `${overtaker.nombre} te pasó. Ahora estás #${row.position} en "${row.nombre_planilla}"`.trim(),
+                    icon: 'trophy',
+                };
+                pushToUser(row.user_id, { title: payload.title, body: payload.body }).catch(err =>
+                    console.error(`[ranking-passed] push failed user=${row.user_id}:`, err.message)
+                );
+                await connection_1.db.query(
+                    `INSERT INTO notifications (user_id, type, payload, status, sent_at)
+                     VALUES ($1, 'ranking_passed', $2, 'sent', NOW())`,
+                    [row.user_id, JSON.stringify(payload)]
+                ).catch(err => console.error(`[ranking-passed] insert failed user=${row.user_id}:`, err.message));
+            }
+        }
+
+        // "Cerca del podio" — outside top 3, within 5 pts of #3
+        // Only when triggered from a real result publication (matchId != null) for idempotency
+        if (matchId && row.position != null && row.position > 3 && podio3) {
+            const gap = podio3.puntos_totales - row.puntos_totales;
+            if (gap >= 0 && gap <= 5) {
+                const inserted = await connection_1.db.query(
+                    `INSERT INTO reminder_sent (user_id, match_id, reminder_type)
+                     VALUES ($1, $2, 'near_podio')
+                     ON CONFLICT (user_id, match_id, reminder_type) DO NOTHING
+                     RETURNING user_id`,
+                    [row.user_id, matchId]
+                ).catch(() => ({ rows: [] }));
+                if (inserted.rows.length > 0) {
+                    const gapStr = gap === 1 ? '1 pt' : `${gap} pts`;
+                    const payload = {
+                        title: '🎯 Cerca del podio',
+                        body: `Estás a ${gapStr} del puesto #3 en "${row.nombre_planilla}". ¡La próxima fecha podés entrar al podio!`.trim(),
+                        icon: 'trophy',
+                    };
+                    pushToUser(row.user_id, { title: payload.title, body: payload.body }).catch(err =>
+                        console.error(`[near-podio] push failed user=${row.user_id}:`, err.message)
+                    );
+                    await connection_1.db.query(
+                        `INSERT INTO notifications (user_id, type, payload, status, sent_at)
+                         VALUES ($1, 'near_podio', $2, 'sent', NOW())`,
+                        [row.user_id, JSON.stringify(payload)]
+                    ).catch(err => console.error(`[near-podio] insert failed user=${row.user_id}:`, err.message));
+                }
             }
         }
     }

@@ -6,23 +6,38 @@ Para el detalle funcional de cada una, ver [FUNCTIONAL.md](./FUNCTIONAL.md). Par
 
 ---
 
-## Parte 1 — Lo que tenemos hoy
+## Parte 1 — Vista panorámica (todas)
 
-| # | Notificación | Trigger | Canales | A quién |
-|---|--------------|---------|---------|---------|
-| 1 | **Recordatorio de cierre del torneo** | 20-40 min antes del cierre | Push + SMS + in-app | Usuarios con pronósticos pendientes |
-| 2 | **Recordatorio antes del partido** (opt-in) | N min antes del kickoff (configurable por usuario: 5/10/15/30/60) | Push + SMS + in-app | Usuarios que activaron el check al cargar la apuesta |
-| 3 | **Arranque del partido** | `start_time` del partido | Push + SMS + in-app | Todos los que apostaron a ese partido |
-| 4 | **Segundo tiempo** | `start_time + 45min + halftime` | Push + SMS + in-app | Idem arranque |
-| 5 | **Resultado publicado — personal** | Admin publica resultado | Email + SMS + in-app | Cada usuario con apuesta en ese partido |
-| 6 | **Resultado publicado — broadcast** | Idem | Push (a todos los subscriptos) | Todos |
-| 7 | **Cambio de posición en ranking** | Recálculo post-resultado | Email + in-app | Cada usuario cuya planilla cambió de posición |
-| 8 | **Nuevo líder del ranking** | Cambia el #1 | Email + Push + SMS + in-app | El nuevo líder |
-| 9 | **Ganador de la fecha** | Se cierra una fecha completa | Email + WhatsApp template | Todos (con destaque al ganador) |
-| 10 | **Resumen semanal** | Cron semanal | Email | Todos |
-| 11 | **Broadcast WhatsApp manual** | On-demand admin | WhatsApp | Todos los que dieron consent |
+Tabla unificada de las notificaciones activas y las propuestas, con su modo de disparo. El detalle de cada propuesta está en la Parte 2.
 
-**Total: 11 notificaciones distintas.**
+| # | Notificación | Estado | Tier | Trigger | Disparo | Canales | A quién |
+|---|--------------|--------|------|---------|---------|---------|---------|
+| 1 | Recordatorio de cierre del torneo | Activa | — | 20-40 min antes del cierre | Automático (cron 5min) | Push + SMS + in-app | Usuarios con pronósticos pendientes |
+| 2 | Recordatorio antes del partido (opt-in) | Activa | — | N min antes del kickoff (5/10/15/30/60) | Automático (cron 5min) | Push + SMS + in-app | Usuarios que activaron el check |
+| 3 | Arranque del partido | Activa | — | `start_time` del partido | Automático (scheduled_jobs) | Push + SMS + in-app | Todos los que apostaron |
+| 4 | Segundo tiempo | Activa | — | `start_time + 45min + halftime` | Automático (scheduled_jobs) | Push + SMS + in-app | Todos los que apostaron |
+| 5 | Resultado publicado — personal | Activa | — | Admin publica resultado | Automático (post-publicación) | Email + SMS + in-app | Cada usuario con apuesta |
+| 6 | Resultado publicado — broadcast | Activa | — | Admin publica resultado | Automático (post-publicación) | Push broadcast | Todos los suscriptos |
+| 7 | Cambio de posición en ranking | Activa | — | Recálculo post-resultado | Automático | Email + in-app | Cada usuario con cambio |
+| 8 | Nuevo líder del ranking | Activa | — | Cambia el #1 | Automático | Email + Push + SMS + in-app | El nuevo líder |
+| 9 | Ganador de la fecha | Activa | — | Se cierra una fecha completa | Automático | Email + WhatsApp template | Todos |
+| 10 | Resumen semanal | Activa | — | Cron semanal | Automático (cron semanal) | Email | Todos |
+| 11 | Broadcast WhatsApp | Activa | — | On-demand admin | **Manual** (admin dispara) | WhatsApp | Todos los que dieron consent |
+| 12 | Te pasaron en el ranking | Propuesta | Tier 1 — Alta | Recálculo, alguien te superó | Automático | Push + in-app | Usuario que bajó |
+| 13 | Mañana arranca el torneo | Propuesta | Tier 1 — Media | 24h antes del primer partido | Automático (cron diario) | Push + SMS + in-app | Usuarios con pendientes |
+| 14 | Cambio de fecha/hora de partido | Propuesta | Tier 1 — Alta | Admin edita `start_time` | Automático (hook en PUT match) | Push + SMS + in-app | Usuarios con bet en el partido |
+| 15 | Resumen post-fecha | Propuesta | Tier 1 — Media | Se cierra una fecha completa | Automático | Email + Push | Todos |
+| 16 | Pago de planilla pendiente | Propuesta | Tier 1 — Media | Planilla sin pagar, torneo arranca en <7 días | Automático (cron diario) | Email + Push | Usuarios con planillas no pagas |
+| 17 | Récord personal de puntos en una fecha | Propuesta | Tier 2 — Baja | Cierre de fecha supera máximo histórico | Automático | Push + in-app | El usuario |
+| 18 | Streak de exactos | Propuesta | Tier 2 — Baja | 3+ aciertos exactos consecutivos | Automático | Push + in-app | El usuario |
+| 19 | Cerca del podio | Propuesta | Tier 2 — Baja | Fuera del top 3 a <5 pts del #3 | Automático | Push + in-app | El usuario |
+| 20 | Comentario en tu apuesta | Propuesta | Tier 3 — Baja | Otro usuario comenta tu apuesta | Automático (hook en POST comment) | Push + in-app | Dueño de la apuesta |
+| 21 | Mensaje nuevo en el chat | Propuesta | Tier 3 — Baja | Insert en `messages` | Automático (hook en POST message) | Push + in-app | Receptor |
+| 22 | Gol durante el partido | Propuesta | Tier 4 — Postergada | Live data (no la tenemos) | Automático | Push + in-app | Todos los que apostaron |
+| 23 | Final del partido | Propuesta | Tier 4 — Postergada | Live data (overlap con #5) | Automático | Push + in-app | Todos los que apostaron |
+| 24 | Aniversario en el prode | Propuesta | Tier 4 — Baja | Cron diario sobre `users.created_at` | Automático (cron diario) | Email + Push | Usuario cumpliendo aniversario |
+
+**Resumen:** 24 notificaciones — 11 activas (10 automáticas + 1 manual), 13 propuestas (todas automáticas).
 
 ---
 
