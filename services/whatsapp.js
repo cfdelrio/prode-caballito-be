@@ -114,6 +114,32 @@ const sendSMS = async ({ to, body }) => {
     return data;
 };
 
+// Retries transient SMS failures (5xx / network) with exponential backoff.
+// Does NOT retry on 4xx (e.g. invalid phone) — those keep failing on retry.
+// In tests, set SMS_RETRY_BASE_MS=0 to skip the backoff sleep.
+const sendSMSWithRetry = async ({ to, body, maxAttempts = 3 }) => {
+    const baseMs = Number(process.env.SMS_RETRY_BASE_MS ?? 1000);
+    let lastErr;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await sendSMS({ to, body });
+        } catch (err) {
+            lastErr = err;
+            const msg = String(err.message || '');
+            const is4xx = /Infobip SMS failed: 4\d{2}/.test(msg);
+            if (is4xx) throw err;
+            if (attempt < maxAttempts) {
+                const delay = baseMs * Math.pow(2, attempt - 1); // 1s, 2s, 4s
+                console.warn(`[sms-retry] attempt ${attempt}/${maxAttempts} failed for ${to}: ${msg} — retrying in ${delay}ms`);
+                if (delay > 0) {
+                    await new Promise(r => setTimeout(r, delay));
+                }
+            }
+        }
+    }
+    throw lastErr;
+};
+
 const sendWhatsAppTemplate = async ({ to, templateName, variables }) => {
     if (!WHATSAPP_ENABLED) {
         console.log(`[whatsapp-template] WHATSAPP_ENABLED=false, skipping "${templateName}" to ${to}`);
@@ -149,4 +175,4 @@ const sendWhatsAppTemplate = async ({ to, templateName, variables }) => {
     return message;
 };
 
-module.exports = { sendWhatsApp, sendSMS, sendWhatsAppTemplate, TEMPLATES };
+module.exports = { sendWhatsApp, sendSMS, sendSMSWithRetry, sendWhatsAppTemplate, TEMPLATES };
