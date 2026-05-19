@@ -2,7 +2,7 @@
 
 const { db } = require('../db/connection');
 const { pushToUser } = require('./push');
-const { sendSMSWithRetry } = require('./whatsapp');
+const { sendSMSWithRetry } = require('./sms');
 
 const REMINDER_TYPE = 'cutoff_30min';
 const DEFAULT_CUTOFF_MINUTES = 5; // minutes before first match that bets lock

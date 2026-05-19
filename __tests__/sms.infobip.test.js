@@ -17,7 +17,7 @@ beforeEach(() => {
 afterAll(() => { global.fetch = originalFetch })
 
 function loadModule() {
-  return require('../services/whatsapp')
+  return require('../services/sms')
 }
 
 describe('sendSMS (Infobip)', () => {

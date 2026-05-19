@@ -4,7 +4,7 @@ exports.schedulerService = void 0;
 const connection_1 = require("../db/connection");
 const notificationService_1 = require("./notificationService");
 const { pushToUser } = require('../services/push');
-const { sendSMSWithRetry } = require('../services/whatsapp');
+const { sendSMSWithRetry } = require('../services/sms');
 exports.schedulerService = {
     async scheduleMatchJobs(match) {
         console.log(`Scheduling jobs for match ${match.id}: ${match.home_team} vs ${match.away_team}`);
