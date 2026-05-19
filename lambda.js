@@ -44,6 +44,7 @@ app.use('/api/imagemail', routes_1.imagemailRoutes);
 app.use('/api/push', routes_1.pushRoutes);
 app.use('/api/admin', routes_1.adminRoutes);
 app.use('/api/voice', routes_1.voiceRoutes);
+app.use('/api/public/polls', routes_1.pollsRoutes);
 app.post('/api/internal/broadcast-whatsapp', authMiddleware, requireAdmin, async (req, res) => {
     try {
         const { message } = req.body;
@@ -177,7 +178,6 @@ const handler = async (event, context) => {
     }
 
     // Ad-hoc query: matches with cutoff in the next N minutes
-    // aws lambda invoke --function-name <fn> --payload '{"source":"prode.upcoming-cutoffs","minutes":60}' out.json && cat out.json
     if (event.source === 'prode.upcoming-cutoffs') {
         const minutes = Math.min(event.minutes || 60, 1440);
         const result = await db.query(`
@@ -195,8 +195,6 @@ const handler = async (event, context) => {
     }
 
     // EventBridge voice survey trigger
-    // Payload: { source: 'prode.voice-survey', surveyId, question, options, userIds? }
-    // options example: [{ digit: '1', label: 'Argentina' }, { digit: '2', label: 'empate' }, { digit: '3', label: 'Brasil' }]
     if (event.source === 'prode.voice-survey') {
         const { runVoiceSurvey } = require('./services/voiceSurvey');
         const result = await runVoiceSurvey({
