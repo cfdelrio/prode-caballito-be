@@ -134,11 +134,15 @@ async function runCutoffReminders() {
     }
 
     // ── Standalone matches (no tournament_id) ─────────────────────────────────
+    // Standalone matches belong to a specific planilla (matches.planilla_id).
+    // Without that link we have no way to know which user(s) to notify, so we
+    // skip matches with planilla_id IS NULL.
     const standaloneRes = await db.query(`
-        SELECT id, home_team, away_team, time_cutoff
+        SELECT id, home_team, away_team, time_cutoff, planilla_id
         FROM matches
         WHERE estado = 'scheduled'
           AND tournament_id IS NULL
+          AND planilla_id IS NOT NULL
           AND time_cutoff IS NOT NULL
           AND time_cutoff BETWEEN NOW() + INTERVAL '20 minutes'
                               AND NOW() + INTERVAL '40 minutes'
@@ -152,9 +156,9 @@ async function runCutoffReminders() {
             FROM planillas p
             JOIN users u ON u.id = p.user_id
             LEFT JOIN bets b ON b.planilla_id = p.id AND b.match_id = $1
-            WHERE b.id IS NULL
-            GROUP BY p.user_id, u.whatsapp_number, u.whatsapp_consent
-        `, [match.id]);
+            WHERE p.id = $2
+              AND b.id IS NULL
+        `, [match.id, match.planilla_id]);
 
         for (const row of missingRes.rows) {
             const insertRes = await db.query(

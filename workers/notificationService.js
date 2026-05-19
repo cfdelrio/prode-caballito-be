@@ -2,9 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.notificationService = void 0;
 exports.generarNotificacionKickoff = generarNotificacionKickoff;
-exports.generarNotificacionRankingCambio = generarNotificacionRankingCambio;
-exports.generarNotificacionNuevoComentario = generarNotificacionNuevoComentario;
-exports.generarNotificacionResultado = generarNotificacionResultado;
 const connection_1 = require("../db/connection");
 exports.notificationService = {
     async crearNotificacion(userId, matchId, type, payload) {
@@ -38,47 +35,6 @@ async function generarNotificacionKickoff(userId, matchId, homeTeam, awayTeam, t
         homeTeam,
         awayTeam,
         startTime: startTime.toISOString(),
-        icon: 'soccer',
-    });
-}
-async function generarNotificacionRankingCambio(userId, posicionAnterior, posicionNueva, planillaNombre) {
-    const mejora = posicionAnterior > posicionNueva;
-    const cambio = Math.abs(posicionAnterior - posicionNueva);
-    const title = mejora ? '¡Subiste en el ranking!' : 'Bajaste en el ranking';
-    const body = mejora
-        ? `Avanzaste ${cambio} posición${cambio > 1 ? 'es' : ''}. Ahora estás ${posicionNueva}° en "${planillaNombre}"`
-        : `Bajaste ${cambio} posición${cambio > 1 ? 'es' : ''}. Ahora estás ${posicionNueva}° en "${planillaNombre}"`;
-    await exports.notificationService.crearNotificacion(userId, null, 'ranking_change', {
-        title,
-        body,
-        posicionAnterior,
-        posicionNueva,
-        planillaNombre,
-        icon: 'trophy',
-    });
-}
-async function generarNotificacionNuevoComentario(userId, commentId, authorName, contenido) {
-    await exports.notificationService.crearNotificacion(userId, null, 'new_comment', {
-        title: `${authorName} comentó`,
-        body: contenido.substring(0, 100),
-        commentId,
-        authorName,
-        icon: 'comment',
-    });
-}
-async function generarNotificacionResultado(userId, matchId, homeTeam, awayTeam, resultadoLocal, resultadoVisitante, puntosObtenidos) {
-    const title = '¡Resultado publicado!';
-    const body = puntosObtenidos > 0
-        ? `Obtuviste ${puntosObtenidos} puntos en ${homeTeam} ${resultadoLocal}-${resultadoVisitante} ${awayTeam}`
-        : `Se publicaron los resultados de ${homeTeam} vs ${awayTeam}`;
-    await exports.notificationService.crearNotificacion(userId, matchId, 'result_published', {
-        title,
-        body,
-        homeTeam,
-        awayTeam,
-        resultadoLocal,
-        resultadoVisitante,
-        puntosObtenidos,
         icon: 'soccer',
     });
 }
