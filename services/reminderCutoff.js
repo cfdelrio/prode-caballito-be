@@ -25,8 +25,10 @@ async function getTournamentCutoffMinutes(tournamentId) {
     return Number.isFinite(n) && n > 0 ? n : DEFAULT_CUTOFF_MINUTES;
 }
 
-function buildPayload({ pending, tournamentName, firstMatch }) {
-    const title = '⏰ Cierra el torneo en ~30 min';
+function buildPayload({ pending, tournamentName, firstMatch, minutesLeft }) {
+    const title = minutesLeft != null
+        ? `⏰ Cierra en ${minutesLeft} min`
+        : '⏰ Cierra el torneo pronto';
     if (pending === 1 && firstMatch) {
         return {
             title,
@@ -84,16 +86,20 @@ async function runCutoffReminders() {
         if (cutoffMs < minMs || cutoffMs > maxMs) continue;
         tournamentsInWindow++;
 
-        // Users with a planilla in this tournament who have at least one missing bet
+        // Users with a planilla in this tournament who have at least one missing bet.
+        // Joins users so we get whatsapp info in one round-trip (avoids N+1).
         const missingRes = await db.query(`
             SELECT p.user_id,
+                   u.whatsapp_number,
+                   u.whatsapp_consent,
                    COUNT(*) FILTER (WHERE b.id IS NULL) AS missing_count
             FROM planilla_tournaments pt
             JOIN planillas p ON p.id = pt.planilla_id
+            JOIN users u ON u.id = p.user_id
             JOIN matches m ON m.tournament_id = pt.tournament_id AND m.estado = 'scheduled'
             LEFT JOIN bets b ON b.planilla_id = p.id AND b.match_id = m.id
             WHERE pt.tournament_id = $1
-            GROUP BY p.user_id
+            GROUP BY p.user_id, u.whatsapp_number, u.whatsapp_consent
             HAVING COUNT(*) FILTER (WHERE b.id IS NULL) > 0
         `, [t.tournament_id]);
 
@@ -110,25 +116,18 @@ async function runCutoffReminders() {
             const pending = Number(row.missing_count);
             const minutesLeft = Math.round((cutoffMs - Date.now()) / 60000);
             const firstMatch = { home_team: t.first_home, away_team: t.first_away };
-            const payload = buildPayload({ pending, tournamentName: t.tournament_name, firstMatch });
+            const payload = buildPayload({ pending, tournamentName: t.tournament_name, firstMatch, minutesLeft });
 
             await pushToUser(row.user_id, payload).catch(err =>
                 console.error(`[cutoff-reminder] push failed user=${row.user_id}:`, err.message)
             );
 
-            const userRes = await db.query(
-                `SELECT whatsapp_number, whatsapp_consent FROM users WHERE id = $1`,
-                [row.user_id]
-            );
-            if (userRes.rows.length > 0) {
-                const { whatsapp_number, whatsapp_consent } = userRes.rows[0];
-                if (whatsapp_number && whatsapp_consent) {
-                    const smsBody = pending === 1
-                        ? `⏰ ${t.tournament_name}: te falta 1 pronóstico — tenés ${minutesLeft} min para cargarlo 👉 prodecaballito.com/apuestas`
-                        : `⏰ ${t.tournament_name}: te faltan ${pending} pronósticos — tenés ${minutesLeft} min para cargarlos 👉 prodecaballito.com/apuestas`;
-                    await sendSMS({ to: whatsapp_number, body: smsBody })
-                        .catch(err => console.error(`[cutoff-reminder] sms failed user=${row.user_id}:`, err.message));
-                }
+            if (row.whatsapp_number && row.whatsapp_consent) {
+                const smsBody = pending === 1
+                    ? `⏰ ${t.tournament_name}: te falta 1 pronóstico — tenés ${minutesLeft} min para cargarlo 👉 prodecaballito.com/apuestas`
+                    : `⏰ ${t.tournament_name}: te faltan ${pending} pronósticos — tenés ${minutesLeft} min para cargarlos 👉 prodecaballito.com/apuestas`;
+                await sendSMS({ to: row.whatsapp_number, body: smsBody })
+                    .catch(err => console.error(`[cutoff-reminder] sms failed user=${row.user_id}:`, err.message));
             }
             notified++;
         }
@@ -147,11 +146,14 @@ async function runCutoffReminders() {
 
     for (const match of standaloneRes.rows) {
         const missingRes = await db.query(`
-            SELECT p.user_id
+            SELECT p.user_id,
+                   u.whatsapp_number,
+                   u.whatsapp_consent
             FROM planillas p
+            JOIN users u ON u.id = p.user_id
             LEFT JOIN bets b ON b.planilla_id = p.id AND b.match_id = $1
             WHERE b.id IS NULL
-            GROUP BY p.user_id
+            GROUP BY p.user_id, u.whatsapp_number, u.whatsapp_consent
         `, [match.id]);
 
         for (const row of missingRes.rows) {
@@ -164,22 +166,17 @@ async function runCutoffReminders() {
             );
             if (insertRes.rows.length === 0) { skipped++; continue; }
 
-            const payload = buildPayload({ pending: 1, tournamentName: null, firstMatch: match });
+            const cutoffMs = new Date(match.time_cutoff).getTime();
+            const minutesLeft = Math.round((cutoffMs - Date.now()) / 60000);
+            const payload = buildPayload({ pending: 1, tournamentName: null, firstMatch: match, minutesLeft });
             await pushToUser(row.user_id, payload).catch(err =>
                 console.error(`[cutoff-reminder] push failed user=${row.user_id}:`, err.message)
             );
 
-            const userRes = await db.query(
-                `SELECT whatsapp_number, whatsapp_consent FROM users WHERE id = $1`,
-                [row.user_id]
-            );
-            if (userRes.rows.length > 0) {
-                const { whatsapp_number, whatsapp_consent } = userRes.rows[0];
-                if (whatsapp_number && whatsapp_consent) {
-                    const smsBody = `⏰ ${match.home_team} vs ${match.away_team} cierra en 30 min — aún no pronosticaste 👉 prodecaballito.com/apuestas`;
-                    await sendSMS({ to: whatsapp_number, body: smsBody })
-                        .catch(err => console.error(`[cutoff-reminder] sms failed user=${row.user_id}:`, err.message));
-                }
+            if (row.whatsapp_number && row.whatsapp_consent) {
+                const smsBody = `⏰ ${match.home_team} vs ${match.away_team} cierra en ${minutesLeft} min — aún no pronosticaste 👉 prodecaballito.com/apuestas`;
+                await sendSMS({ to: row.whatsapp_number, body: smsBody })
+                    .catch(err => console.error(`[cutoff-reminder] sms failed user=${row.user_id}:`, err.message));
             }
             notified++;
         }

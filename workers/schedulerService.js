@@ -54,22 +54,31 @@ exports.schedulerService = {
         for (const job of jobs) {
             try {
                 console.log(`Processing ${job.type} job for match ${job.matchId}`);
-                // Notify all users who placed a bet on this match
+                // Notify all users who placed a bet on this match — include their prediction
                 const betters = await connection_1.db.query(`
-          SELECT DISTINCT u.id AS user_id, u.whatsapp_number, u.whatsapp_consent
+          SELECT u.id AS user_id, u.whatsapp_number, u.whatsapp_consent,
+                 MIN(b.goles_local)     AS goles_local,
+                 MIN(b.goles_visitante) AS goles_visitante
           FROM users u
           JOIN planillas p ON p.user_id = u.id
           JOIN bets b ON b.planilla_id = p.id AND b.match_id = $1
+          GROUP BY u.id, u.whatsapp_number, u.whatsapp_consent
         `, [job.matchId]);
                 const label = job.type === 'kickoff' ? '¡Empieza!' : '¡Segundo tiempo!';
-                const smsBody = `⚽ ${label} ${job.homeTeam} vs ${job.awayTeam} 👉 prodecaballito.com`;
-                const pushPayload = {
-                    title: label,
-                    body: `${job.homeTeam} vs ${job.awayTeam}`,
-                    url: '/apuestas',
-                    icon: '/favicon.svg',
-                };
                 for (const user of betters.rows) {
+                    const hasBet = user.goles_local != null && user.goles_visitante != null;
+                    const score = hasBet ? `${user.goles_local}-${user.goles_visitante}` : null;
+                    const smsBody = hasBet
+                        ? `⚽ ${label} ${job.homeTeam} vs ${job.awayTeam} — tu pronóstico: ${score} 👉 prodecaballito.com`
+                        : `⚽ ${label} ${job.homeTeam} vs ${job.awayTeam} 👉 prodecaballito.com`;
+                    const pushPayload = {
+                        title: label,
+                        body: hasBet
+                            ? `${job.homeTeam} vs ${job.awayTeam} — tu pronóstico: ${score}`
+                            : `${job.homeTeam} vs ${job.awayTeam}`,
+                        url: '/apuestas',
+                        icon: '/favicon.svg',
+                    };
                     // In-app notification
                     await (0, notificationService_1.generarNotificacionKickoff)(user.user_id, job.matchId, job.homeTeam, job.awayTeam, job.type, job.startTime)
                         .catch(err => console.error(`[scheduler] in-app failed user=${user.user_id}:`, err.message));
