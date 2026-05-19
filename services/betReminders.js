@@ -17,10 +17,12 @@ async function processBetReminders() {
     const res = await db.query(`
         SELECT br.id, br.user_id, br.match_id, br.remind_minutes,
                m.home_team, m.away_team, m.start_time,
+               b.goles_local, b.goles_visitante,
                u.whatsapp_number, u.whatsapp_consent
         FROM bet_reminders br
         JOIN matches m ON m.id = br.match_id
         JOIN users   u ON u.id = br.user_id
+        LEFT JOIN bets b ON b.planilla_id = br.planilla_id AND b.match_id = br.match_id
         WHERE br.email_sent = false
           AND br.scheduled_for <= NOW()
           AND m.estado = 'scheduled'
@@ -33,9 +35,14 @@ async function processBetReminders() {
 
     for (const r of res.rows) {
         try {
+            const hasBet = r.goles_local != null && r.goles_visitante != null;
+            const score = hasBet ? `${r.goles_local}-${r.goles_visitante}` : null;
+
             const payload = {
                 title: `⚽ Empieza en ${r.remind_minutes} min`,
-                body: `${r.home_team} vs ${r.away_team}`,
+                body: hasBet
+                    ? `${r.home_team} vs ${r.away_team} — tu pronóstico: ${score}`
+                    : `${r.home_team} vs ${r.away_team}`,
                 url: '/apuestas',
                 icon: '/favicon.svg',
             };
@@ -45,7 +52,9 @@ async function processBetReminders() {
             );
 
             if (r.whatsapp_number && r.whatsapp_consent) {
-                const body = `⚽ ${r.home_team} vs ${r.away_team} empieza en ${r.remind_minutes} min 👉 prodecaballito.com`;
+                const body = hasBet
+                    ? `⚽ ${r.home_team} vs ${r.away_team} empieza en ${r.remind_minutes} min — tu pronóstico: ${score} 🤞 prodecaballito.com`
+                    : `⚽ ${r.home_team} vs ${r.away_team} empieza en ${r.remind_minutes} min 👉 prodecaballito.com`;
                 await sendSMS({ to: r.whatsapp_number, body }).catch(err =>
                     console.error(`[bet-reminders] sms failed user=${r.user_id} match=${r.match_id}:`, err.message)
                 );
