@@ -113,9 +113,9 @@ describe('runCutoffReminders — tournament-level', () => {
           first_match_id: M1, first_home: 'ARG', first_away: 'BRA' },
       ]})
       .mockResolvedValueOnce({ rows: [] })                                        // cutoff_minutes config (default=5)
-      .mockResolvedValueOnce({ rows: [{ user_id: U1, missing_count: '3' }] })     // missing bets
+      .mockResolvedValueOnce({ rows: [{ user_id: U1, missing_count: '3',
+        whatsapp_number: '+5491155996222', whatsapp_consent: true }] })           // missing bets + user info
       .mockResolvedValueOnce({ rows: [{ match_id: M1 }] })                        // INSERT reminder_sent RETURNING
-      .mockResolvedValueOnce({ rows: [{ whatsapp_number: '+5491155996222', whatsapp_consent: true }] }) // user
       .mockResolvedValueOnce({ rows: [] })                                        // standalone matches
 
     const out = await runCutoffReminders()
@@ -156,9 +156,9 @@ describe('runCutoffReminders — tournament-level', () => {
           first_match_id: M1, first_home: 'A', first_away: 'B' },
       ]})
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ user_id: U1, missing_count: '1' }] })
+      .mockResolvedValueOnce({ rows: [{ user_id: U1, missing_count: '1',
+        whatsapp_number: '+5491155996222', whatsapp_consent: false }] })
       .mockResolvedValueOnce({ rows: [{ match_id: M1 }] })
-      .mockResolvedValueOnce({ rows: [{ whatsapp_number: '+5491155996222', whatsapp_consent: false }] })
       .mockResolvedValueOnce({ rows: [] })
 
     await runCutoffReminders()
@@ -189,11 +189,11 @@ describe('runCutoffReminders — standalone matches', () => {
     db.query
       .mockResolvedValueOnce({ rows: [] }) // tournaments
       .mockResolvedValueOnce({ rows: [
-        { id: M2, home_team: 'ARG', away_team: 'BRA', time_cutoff: new Date() },
+        { id: M2, home_team: 'ARG', away_team: 'BRA', time_cutoff: new Date(Date.now() + 30 * 60 * 1000) },
       ]})
-      .mockResolvedValueOnce({ rows: [{ user_id: U1 }] }) // missing bets
+      .mockResolvedValueOnce({ rows: [{ user_id: U1,
+        whatsapp_number: '+5491155996222', whatsapp_consent: true }] }) // missing bets + user
       .mockResolvedValueOnce({ rows: [{ match_id: M2 }] }) // INSERT RETURNING
-      .mockResolvedValueOnce({ rows: [{ whatsapp_number: '+5491155996222', whatsapp_consent: true }] })
 
     const out = await runCutoffReminders()
 
