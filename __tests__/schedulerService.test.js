@@ -10,15 +10,17 @@ jest.mock('../services/push', () => ({
   pushToUser: jest.fn().mockResolvedValue(undefined),
 }))
 jest.mock('../services/whatsapp', () => ({
+  sendWhatsApp: jest.fn().mockResolvedValue(undefined),
+}))
+jest.mock('../services/sms', () => ({
   sendSMS: jest.fn().mockResolvedValue(undefined),
   sendSMSWithRetry: jest.fn().mockResolvedValue(undefined),
-  sendWhatsApp: jest.fn().mockResolvedValue(undefined),
 }))
 
 const { db } = require('../db/connection')
 const { generarNotificacionKickoff } = require('../workers/notificationService')
 const { pushToUser } = require('../services/push')
-const { sendSMSWithRetry: sendSMS } = require('../services/whatsapp')
+const { sendSMSWithRetry: sendSMS } = require('../services/sms')
 const { schedulerService } = require('../workers/schedulerService')
 
 const MATCH_ID = 'a0000000-0000-0000-0000-000000000001'

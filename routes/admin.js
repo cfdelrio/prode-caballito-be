@@ -2,7 +2,8 @@
 const { Router } = require("express");
 const { authMiddleware, requireAdmin } = require("../middleware/auth");
 const { adminTestWhatsappValidation, adminWeeklyEmailValidation, adminWinnerImageValidation, adminRecalcMatchdayValidation, adminSendWelcomeValidation, adminTriggerWinnerValidation } = require("../middleware/validation");
-const { sendWhatsApp, sendSMS } = require("../services/whatsapp");
+const { sendWhatsApp } = require("../services/whatsapp");
+const { sendSMS } = require("../services/sms");
 const { db } = require("../db/connection");
 const { sendWeeklyEmail } = require("../services/email");
 const { runValidation } = require("../services/scoreValidator");

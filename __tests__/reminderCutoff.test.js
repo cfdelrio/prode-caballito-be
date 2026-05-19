@@ -6,14 +6,14 @@ jest.mock('../db/connection', () => ({
 jest.mock('../services/push', () => ({
   pushToUser: jest.fn().mockResolvedValue(undefined),
 }))
-jest.mock('../services/whatsapp', () => ({
+jest.mock('../services/sms', () => ({
   sendSMS: jest.fn().mockResolvedValue(undefined),
   sendSMSWithRetry: jest.fn().mockResolvedValue(undefined),
 }))
 
 const { db } = require('../db/connection')
 const { pushToUser } = require('../services/push')
-const { sendSMSWithRetry: sendSMS } = require('../services/whatsapp')
+const { sendSMSWithRetry: sendSMS } = require('../services/sms')
 const {
   runCutoffReminders, buildPayload, getTournamentCutoffMinutes,
   REMINDER_TYPE, DEFAULT_CUTOFF_MINUTES,

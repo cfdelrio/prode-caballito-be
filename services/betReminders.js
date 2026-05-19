@@ -2,7 +2,7 @@
 
 const { db } = require('../db/connection');
 const { pushToUser } = require('./push');
-const { sendSMSWithRetry } = require('./whatsapp');
+const { sendSMSWithRetry } = require('./sms');
 
 /**
  * Process opt-in pre-kickoff reminders saved when the user placed the bet

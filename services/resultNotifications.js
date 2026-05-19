@@ -3,7 +3,7 @@
 const { db } = require('../db/connection');
 const { calcularPuntaje } = require('./scoring');
 const { sendNewLeaderEmail, sendResultEmail } = require('./email');
-const { sendSMS } = require('./whatsapp');
+const { sendSMS } = require('./sms');
 const { pushToUser, pushToAll } = require('./push');
 
 /**
