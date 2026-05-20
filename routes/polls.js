@@ -179,4 +179,49 @@ router.get('/:slug/results', async (req, res) => {
     }
 });
 
+// PATCH /api/public/polls/:slug — admin: set winner, toggle active/ended
+router.patch('/:slug', async (req, res) => {
+    try {
+        const userId = getUserIdFromToken(req);
+        if (!userId) return res.status(401).json({ success: false, error: 'Auth required' });
+
+        const userRes = await connection_1.db.query('SELECT rol FROM users WHERE id = $1', [userId]);
+        const rol = userRes.rows[0]?.rol;
+        if (!rol || !['admin', 'superadmin'].includes(rol)) {
+            return res.status(403).json({ success: false, error: 'Solo admins' });
+        }
+
+        const { slug } = req.params;
+        const { winner_option_id, active, ended } = req.body;
+
+        const updates = [];
+        const params = [];
+        let idx = 1;
+
+        if (winner_option_id !== undefined) { updates.push(`winner_option_id = $${idx++}`); params.push(winner_option_id); }
+        if (active !== undefined)           { updates.push(`active = $${idx++}`);           params.push(active); }
+        if (ended !== undefined)            { updates.push(`ended = $${idx++}`);             params.push(ended); }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ success: false, error: 'Nada para actualizar' });
+        }
+
+        params.push(slug);
+        const result = await connection_1.db.query(
+            `UPDATE public_polls SET ${updates.join(', ')}, updated_at = NOW()
+             WHERE slug = $${idx} RETURNING *`,
+            params
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Poll no encontrado' });
+        }
+
+        res.json({ success: true, data: result.rows[0] });
+    } catch (error) {
+        console.error('[polls] PATCH error:', error.message);
+        res.status(500).json({ success: false, error: 'Error interno del servidor' });
+    }
+});
+
 exports.default = router;
