@@ -1,6 +1,10 @@
 'use strict';
 
 require('dotenv').config();
+// config/index.js throws if JWT_SECRET is missing in production.
+// Migration scripts don't use JWT — set a dummy to satisfy the check.
+if (!process.env.JWT_SECRET) process.env.JWT_SECRET = 'migration-no-jwt-needed';
+
 const { db } = require('../db/connection');
 const fs = require('fs');
 const path = require('path');
