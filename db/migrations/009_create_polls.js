@@ -41,7 +41,7 @@ async function migrate(db) {
             id            SERIAL PRIMARY KEY,
             poll_id       INTEGER NOT NULL REFERENCES public_polls(id) ON DELETE CASCADE,
             option_id     INTEGER NOT NULL REFERENCES poll_options(id),
-            user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            user_id       UUID REFERENCES users(id) ON DELETE SET NULL,
             ip_hash       VARCHAR(64) NOT NULL,
             session_token VARCHAR(64),
             created_at    TIMESTAMPTZ DEFAULT NOW()
