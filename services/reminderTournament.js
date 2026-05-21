@@ -3,6 +3,7 @@
 const { db } = require('../db/connection')
 const { pushToUser } = require('./push')
 const { sendSMSWithRetry } = require('./sms')
+const { sendEvent } = require('./engageClient')
 
 const REMINDER_TYPE = 'tournament_tomorrow'
 
@@ -70,7 +71,26 @@ async function runTournamentReminders() {
                 [u.user_id, t.first_match_id, JSON.stringify(payload)]
             ).catch(err => console.error(`[tournament-reminder] insert failed user=${u.user_id}:`, err.message))
 
-            if (u.whatsapp_number && u.whatsapp_consent) {
+            if (process.env.ENGAGE_ENABLED === 'true') {
+                sendEvent({
+                    type: 'prode.tournament_tomorrow',
+                    userId: String(u.user_id),
+                    idempotencyKey: `tournament_tomorrow:${u.user_id}:${t.first_match_id}`,
+                    payload: {
+                        business_context: {
+                            tournament_name: t.tournament_name,
+                            pending_bets: pending,
+                        },
+                    },
+                    metadata: {
+                        user_contact: {
+                            phone: u.whatsapp_number,
+                            whatsapp_consent: u.whatsapp_consent,
+                            idioma_pref: 'es-AR',
+                        },
+                    },
+                }).catch(err => console.error(`[tournament-reminder] engage failed user=${u.user_id}:`, err.message))
+            } else if (u.whatsapp_number && u.whatsapp_consent) {
                 sendSMSWithRetry({
                     to: u.whatsapp_number,
                     body: `🏁 Mañana arranca ${t.tournament_name}. ${payload.body} 👉 prodecaballito.com/apuestas`,
