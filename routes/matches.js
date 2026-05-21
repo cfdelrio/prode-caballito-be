@@ -7,6 +7,7 @@ const validation_1 = require("../middleware/validation");
 const scoring_1 = require("../services/scoring");
 const { notifyResult } = require("../services/resultNotifications");
 const { sendRankingUpdateEmail } = require("../services/email");
+const { sendEvent } = require("../services/engageClient");
 const tournamentRanking_1 = require("../services/tournamentRanking");
 const cache = require("../services/cache");
 const router = (0, express_1.Router)();
@@ -303,7 +304,26 @@ async function _notifyMatchRescheduled(matchId, match) {
              VALUES ($1, $2, 'match_rescheduled', $3, 'sent', NOW())`,
             [u.user_id, matchId, JSON.stringify(payload)]
         ).catch(err => console.error(`[reschedule] insert failed user=${u.user_id}:`, err.message));
-        if (u.whatsapp_number && u.whatsapp_consent) {
+        if (process.env.ENGAGE_ENABLED === 'true') {
+            sendEvent({
+                type: 'prode.match_rescheduled',
+                userId: String(u.user_id),
+                idempotencyKey: `match_rescheduled:${u.user_id}:${matchId}`,
+                payload: {
+                    business_context: {
+                        match: { local: homeTeam, away: awayTeam, new_datetime: formatted },
+                    },
+                },
+                metadata: {
+                    user_contact: {
+                        nombre: u.nombre,
+                        phone: u.whatsapp_number,
+                        whatsapp_consent: u.whatsapp_consent,
+                        idioma_pref: 'es-AR',
+                    },
+                },
+            }).catch(err => console.error(`[reschedule] engage failed user=${u.user_id}:`, err.message));
+        } else if (u.whatsapp_number && u.whatsapp_consent) {
             sendSMSWithRetry({
                 to: u.whatsapp_number,
                 body: `📅 ${homeTeam} vs ${awayTeam} reprogramado: ${formatted} — prodecaballito.com/apuestas`,
@@ -390,7 +410,8 @@ async function actualizarRanking(matchId = null) {
     UPDATE ranking r SET position = ranked.position FROM ranked WHERE r.id = ranked.id
   `);
     const newResult = await connection_1.db.query(`
-    SELECT r.id, r.planilla_id, r.position, r.puntos_totales, p.user_id, p.nombre_planilla, u.nombre, u.email
+    SELECT r.id, r.planilla_id, r.position, r.puntos_totales, p.user_id, p.nombre_planilla,
+           u.nombre, u.email, u.whatsapp_number, u.whatsapp_consent
     FROM ranking r
     JOIN planillas p ON r.planilla_id = p.id
     JOIN users u ON p.user_id = u.id
@@ -408,11 +429,40 @@ async function actualizarRanking(matchId = null) {
         const prevPos = prev?.position || null;
         if (prevPos !== row.position) {
             try {
-                await sendRankingUpdateEmail(row.email, row.nombre, row.position, prevPos, row.puntos_totales);
-                console.log(`📧 Email sent to ${row.email} (position: ${row.position})`);
+                if (process.env.ENGAGE_ENABLED === 'true') {
+                    await sendEvent({
+                        type: prevPos == null ? 'prode.ranking_change.entered'
+                            : row.position < prevPos ? 'prode.ranking_change.up'
+                            : 'prode.ranking_change.down',
+                        userId: String(row.user_id),
+                        idempotencyKey: `ranking_change:${row.user_id}:${matchId || 'recalc'}`,
+                        payload: {
+                            business_context: {
+                                old_rank: prevPos,
+                                new_rank: row.position,
+                                delta: prevPos != null ? Math.abs(prevPos - row.position) : null,
+                                puntos_totales: row.puntos_totales,
+                                planilla_nombre: row.nombre_planilla,
+                            },
+                        },
+                        metadata: {
+                            user_contact: {
+                                nombre: row.nombre,
+                                email: row.email,
+                                phone: row.whatsapp_number,
+                                whatsapp_consent: row.whatsapp_consent,
+                                idioma_pref: 'es-AR',
+                            },
+                        },
+                    });
+                    console.log(`[engage] ranking_change queued for ${row.email} (position: ${row.position})`);
+                } else {
+                    await sendRankingUpdateEmail(row.email, row.nombre, row.position, prevPos, row.puntos_totales);
+                    console.log(`📧 Email sent to ${row.email} (position: ${row.position})`);
+                }
             }
             catch (err) {
-                console.error(`Failed to send email to ${row.email}:`, err);
+                console.error(`Failed to send ranking update for ${row.email}:`, err);
             }
             // In-app notification (only when the user is on the ranked board, i.e. position != null)
             if (row.position != null) {
@@ -483,6 +533,28 @@ async function actualizarRanking(matchId = null) {
                          VALUES ($1, 'near_podio', $2, 'sent', NOW())`,
                         [row.user_id, JSON.stringify(payload)]
                     ).catch(err => console.error(`[near-podio] insert failed user=${row.user_id}:`, err.message));
+                    if (process.env.ENGAGE_ENABLED === 'true') {
+                        sendEvent({
+                            type: 'prode.near_podio',
+                            userId: String(row.user_id),
+                            idempotencyKey: `near_podio:${row.user_id}:${matchId}`,
+                            payload: {
+                                business_context: {
+                                    gap,
+                                    podio3_nombre: podio3.nombre,
+                                    planilla_nombre: row.nombre_planilla,
+                                    position: row.position,
+                                },
+                            },
+                            metadata: {
+                                user_contact: {
+                                    phone: row.whatsapp_number,
+                                    whatsapp_consent: row.whatsapp_consent,
+                                    idioma_pref: 'es-AR',
+                                },
+                            },
+                        }).catch(err => console.error(`[near-podio] engage failed user=${row.user_id}:`, err.message));
+                    }
                 }
             }
         }
