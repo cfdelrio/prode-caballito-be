@@ -4,9 +4,76 @@ Esta doc lista **qué variables puede usar cada template en Engage** según lo q
 ProdeCaballito envía en cada `sendEvent`. Mantenerla actualizada cada vez que
 se agrega o modifica un trigger.
 
-## Estructura común del payload a Engage
+---
 
-Todo evento de PC tiene esta estructura:
+## ⚠️ IMPORTANTE — Sintaxis correcta de variables
+
+Engage resuelve las variables `{{...}}` desde **dos scopes distintos**:
+
+### 1. Datos del contacto → `{{user.<campo>}}`
+
+Los datos del usuario (nombre, email, phone, tema_equipo, etc) viven en el
+**contact store de Engage** (`user.metadata`). Se actualizan automáticamente
+en cada evento (auto-upsert sincrónico) con lo que mandamos en
+`metadata.user_contact` y `metadata.user_profile`.
+
+```
+{{user.nombre}}            ✅ FUNCIONA
+{{user.email}}             ✅ FUNCIONA
+{{user.phone}}             ✅ FUNCIONA
+{{user.tema_equipo}}       ✅ FUNCIONA
+{{user.planilla_nombre}}   ✅ FUNCIONA
+```
+
+### 2. Datos del evento → `{{business_context.<campo>}}`
+
+Los datos específicos del evento (puntos sumados, match, prev_leader, etc)
+solo existen durante ese disparo puntual. Viven en `payload.business_context`.
+
+```
+{{business_context.puntos}}             ✅ FUNCIONA
+{{business_context.prev_leader_nombre}} ✅ FUNCIONA
+{{business_context.match.local}}        ✅ FUNCIONA
+```
+
+### ❌ NO funciona
+
+```
+{{nombre}}              ❌ NO FUNCIONA (Engage busca en payload root, no existe)
+{{tema_equipo}}         ❌ NO FUNCIONA (mismo motivo)
+{{puntos}}              ❌ NO FUNCIONA (no llega como root del payload)
+{{user_contact.nombre}} ❌ NO FUNCIONA (metadata.user_contact no es scope del template)
+```
+
+### Regla mnemónica
+
+| Lo que querés | Usá |
+|---|---|
+| Algo del **usuario** (perfil/contacto) | `{{user.<campo>}}` |
+| Algo del **evento** disparado ahora | `{{business_context.<campo>}}` |
+
+---
+
+## Cómo funciona el auto-upsert
+
+Cuando PC manda un `sendEvent` con `metadata.user_contact` + `metadata.user_profile`,
+Engage hace upsert **sincrónico** del contact store ANTES de procesar el evento:
+
+```
+PC → sendEvent(metadata.user_contact.nombre = "Juan Nuevo")
+  └─ Engage upsert: user.metadata.nombre = "Juan Nuevo"  ◄── síncrono
+     └─ worker procesa evento
+        └─ template "Hola {{user.nombre}}" → "Hola Juan Nuevo" ✅
+```
+
+**Consecuencias:**
+- Siempre mandar `metadata` completo en cada evento (es la fuente de verdad).
+- El contact store se mantiene fresco automáticamente.
+- Templates leen del contact store actualizado.
+
+---
+
+## Estructura del payload a Engage
 
 ```js
 {
@@ -23,162 +90,160 @@ Todo evento de PC tiene esta estructura:
 }
 ```
 
-En **templates de Engage**, podés referenciar cualquier campo de estos 3
-nodos. La convención típica es:
-
-- `{{nombre}}` o `{{user_contact.nombre}}` — atributos de contacto
-- `{{tema_equipo}}` o `{{user_profile.tema_equipo}}` — atributos de perfil
-- `{{puntos}}` o `{{business_context.puntos}}` — datos del evento
-
-> Confirmar con el equipo Engage la sintaxis exacta de resolución de variables
-> (flat vs nested). Esta doc asume nested con prefijo.
+**Engage internamente:**
+1. `metadata.user_contact` + `metadata.user_profile` → upsert a `user.metadata.*`
+2. `payload.business_context.*` → scope del template como `{{business_context.*}}`
+3. `user.metadata.*` → scope del template como `{{user.*}}`
 
 ---
 
 ## Variables siempre disponibles (en TODOS los eventos)
 
-Estos campos los manda `buildEngageMetadata(user)` en `utils/engageHelpers.js`:
+Estos campos los manda `buildEngageMetadata(user)` en `utils/engageHelpers.js`
+y quedan upserteados en `user.metadata.*`. Acceso desde templates: `{{user.<campo>}}`.
 
-### `metadata.user_contact`
+### Desde `metadata.user_contact` (upsert a `user.metadata`)
 
-| Variable | Tipo | Descripción |
+| Variable en template | Tipo | Descripción |
 |---|---|---|
-| `nombre` | string\|null | Nombre del user |
-| `email` | string\|null | Email (PII) |
-| `phone` | string\|null | WhatsApp E.164 (`+549...`) |
-| `whatsapp_consent` | boolean | Si autorizó WhatsApp |
-| `idioma_pref` | string | `'es-AR'` (default) o `'pt-BR'` |
+| `{{user.nombre}}` | string\|null | Nombre del user |
+| `{{user.email}}` | string\|null | Email (también disponible como columna `user.email`) |
+| `{{user.phone}}` | string\|null | WhatsApp E.164 (`+549...`) |
+| `{{user.whatsapp_consent}}` | boolean | Si autorizó WhatsApp |
+| `{{user.idioma_pref}}` | string | `'es-AR'` (default) o `'pt-BR'` |
 
-### `metadata.user_profile`
+### Desde `metadata.user_profile` (upsert a `user.metadata`)
 
-| Variable | Tipo | Descripción |
+| Variable en template | Tipo | Descripción |
 |---|---|---|
-| `tema_equipo` | string\|null | Equipo favorito (river, boca, etc) |
-| `foto_url` | string\|null | URL del avatar |
-| `fecha_registro` | ISO 8601\|null | `created_at` del user |
-| `rol` | string | `'usuario'`, `'moderator'`, `'admin'` |
-| `planilla_nombre` | string\|null | Nombre de la planilla activa |
-| `planilla_id` | string\|null | UUID de la planilla |
-| `tournament_name` | string\|null | Torneo en el que participa |
-| `estado_pago` | boolean\|null | Si pagó la planilla |
-| `current_streak` | number | Racha actual de exactos |
-| `best_streak` | number | Mejor racha histórica |
-| `badges_count` | number | Cantidad de logros desbloqueados |
-| `ranking_position` | number\|null | Posición en ranking |
-| `puntos_totales` | number\|null | Puntos totales acumulados |
+| `{{user.tema_equipo}}` | string\|null | Equipo favorito (river, boca, etc) |
+| `{{user.foto_url}}` | string\|null | URL del avatar |
+| `{{user.fecha_registro}}` | ISO 8601\|null | `created_at` del user |
+| `{{user.rol}}` | string | `'usuario'`, `'moderator'`, `'admin'` |
+| `{{user.planilla_nombre}}` | string\|null | Nombre de la planilla activa |
+| `{{user.planilla_id}}` | string\|null | UUID de la planilla |
+| `{{user.tournament_name}}` | string\|null | Torneo en el que participa |
+| `{{user.estado_pago}}` | boolean\|null | Si pagó la planilla |
+| `{{user.current_streak}}` | number | Racha actual de exactos |
+| `{{user.best_streak}}` | number | Mejor racha histórica |
+| `{{user.badges_count}}` | number | Cantidad de logros desbloqueados |
+| `{{user.ranking_position}}` | number\|null | Posición en ranking |
+| `{{user.puntos_totales}}` | number\|null | Puntos totales acumulados |
 
-> **No todos los call sites llenan todos los campos de `user_profile`.** Los
-> campos derivados (planilla, ranking, streak) solo aparecen en eventos donde
-> esa info está cargada. Cuando no se pasa, el campo es `null` o `0`.
+> **No todos los call sites llenan todos los campos.** Los campos derivados
+> (planilla, ranking, streak) solo aparecen en eventos donde esa info está
+> cargada. Cuando no se pasa, el campo es `null` o `0` en el upsert.
 
 ---
 
 ## Variables específicas por evento (`business_context`)
 
+Acceso desde templates: `{{business_context.<campo>}}`.
+
 ### 📧 `prode.verification_code`
 
 Trigger: signup, reenvío de código.
 
-| Variable | Tipo | Descripción |
+| Variable en template | Tipo | Descripción |
 |---|---|---|
-| `code` | string | Código de 6 dígitos |
-| `expiresIn` | number | Segundos hasta expirar (900) |
+| `{{business_context.code}}` | string | Código de 6 dígitos |
+| `{{business_context.expiresIn}}` | number | Segundos hasta expirar (900) |
 
 ### 👋 `prode.welcome`
 
 Trigger: registro completo.
 
-Sin `business_context` específico — solo usa `metadata.user_profile`.
+Sin `business_context` específico — solo usa `{{user.*}}`.
 
 ### 🏆 `prode.new_leader`
 
 Trigger: cambio de líder en ranking tras publicar resultado.
 
-| Variable | Tipo | Descripción |
+| Variable en template | Tipo | Descripción |
 |---|---|---|
-| `puntos` | number | Puntos del nuevo líder |
-| `prev_leader_nombre` | string\|null | Nombre del líder anterior |
-| `match.local` | string | Equipo local |
-| `match.away` | string | Equipo visitante |
-| `match.goles_local` | number | Goles local |
-| `match.goles_visitante` | number | Goles visitante |
+| `{{business_context.puntos}}` | number | Puntos del nuevo líder |
+| `{{business_context.prev_leader_nombre}}` | string\|null | Nombre del líder anterior |
+| `{{business_context.match.local}}` | string | Equipo local |
+| `{{business_context.match.away}}` | string | Equipo visitante |
+| `{{business_context.match.goles_local}}` | number | Goles local |
+| `{{business_context.match.goles_visitante}}` | number | Goles visitante |
 
-**Plus en `user_profile`:** `planilla_nombre`, `planilla_id`, `ranking_position`, `puntos_totales`.
+**Plus en `{{user.*}}`:** `planilla_nombre`, `planilla_id`, `ranking_position`, `puntos_totales`.
 
 ### 📊 `prode.result_published.individual`
 
 Trigger: resultado publicado, una por bet.
 
-| Variable | Tipo | Descripción |
+| Variable en template | Tipo | Descripción |
 |---|---|---|
-| `match.{local,away,goles_local,goles_visitante}` | mixed | Datos del partido |
-| `bet.{goles_local,goles_visitante,puntos_obtenidos}` | mixed | Datos de la apuesta del user |
-| `ranking_after.position` | number | Posición después del recálculo |
-| `outcome` | string\|null | `'exacto'`, `'resultado'`, o `null` |
+| `{{business_context.match.local}}` (y `away`, `goles_local`, `goles_visitante`) | mixed | Datos del partido |
+| `{{business_context.bet.goles_local}}` (y `goles_visitante`, `puntos_obtenidos`) | mixed | Datos de la apuesta del user |
+| `{{business_context.ranking_after.position}}` | number | Posición después del recálculo |
+| `{{business_context.outcome}}` | string\|null | `'exacto'`, `'resultado'`, o `null` |
 
-**Plus en `user_profile`:** `planilla_nombre`, `current_streak`, `best_streak`, `ranking_position`, `puntos_totales`.
+**Plus en `{{user.*}}`:** `planilla_nombre`, `current_streak`, `best_streak`, `ranking_position`, `puntos_totales`.
 
 ### 📧 `prode.weekly_digest`
 
 Trigger: cron semanal.
 
-| Variable | Tipo | Descripción |
+| Variable en template | Tipo | Descripción |
 |---|---|---|
-| `week_date` | string | Fecha formateada |
-| `ranking_position` | number | Posición |
-| `total_players` | number | Total jugadores |
-| `points` | number | Puntos del user |
-| `best_round` | string\|null | Texto "Fecha N" o null |
-| `best_round_points` | number | Pts en mejor jornada |
-| `diferencia_puntos` | number | Distancia al top 5 |
-| `pending_bets` | number | Apuestas pendientes |
-| `tight_match` | object\|null | Partido más reñido |
-| `upcoming_matches` | array | Próximos 3 partidos |
+| `{{business_context.week_date}}` | string | Fecha formateada |
+| `{{business_context.ranking_position}}` | number | Posición |
+| `{{business_context.total_players}}` | number | Total jugadores |
+| `{{business_context.points}}` | number | Puntos del user |
+| `{{business_context.best_round}}` | string\|null | Texto "Fecha N" o null |
+| `{{business_context.best_round_points}}` | number | Pts en mejor jornada |
+| `{{business_context.diferencia_puntos}}` | number | Distancia al top 5 |
+| `{{business_context.pending_bets}}` | number | Apuestas pendientes |
+| `{{business_context.tight_match}}` | object\|null | Partido más reñido |
+| `{{business_context.upcoming_matches}}` | array | Próximos 3 partidos |
 
 ### 📣 `prode.broadcast_manual`
 
 Trigger: admin dispara desde Admin → tab WhatsApp.
 
-| Variable | Tipo | Descripción |
+| Variable en template | Tipo | Descripción |
 |---|---|---|
-| `message` | string | Mensaje libre del admin |
+| `{{business_context.message}}` | string | Mensaje libre del admin |
 
 ### 🎙️ `prode.voice_nuevo_lider`
 
 Trigger: igual que `new_leader` pero por canal voice.
 
-| Variable | Tipo | Descripción |
+| Variable en template | Tipo | Descripción |
 |---|---|---|
-| `template` | string | `'Nuevo Lider Prode'` |
-| `nuevo_lider` | string | Nombre del nuevo líder (= user) |
-| `puntos` | number | Puntos |
-| `prev_leader` | string\|null | Líder anterior |
-| `match_name` | string | `"Local vs Away"` |
+| `{{business_context.template}}` | string | `'Nuevo Lider Prode'` |
+| `{{business_context.nuevo_lider}}` | string | Nombre del nuevo líder (= user) |
+| `{{business_context.puntos}}` | number | Puntos |
+| `{{business_context.prev_leader}}` | string\|null | Líder anterior |
+| `{{business_context.match_name}}` | string | `"Local vs Away"` |
 
 ### 💥 `prode.voice_perfect_score`
 
 Trigger: usuario acertó exacto.
 
-| Variable | Tipo | Descripción |
+| Variable en template | Tipo | Descripción |
 |---|---|---|
-| `template` | string | `'Exacto Prode'` |
-| `home_team`, `away_team` | string | Equipos |
-| `goles_local`, `goles_visitante` | number | Resultado |
-| `puntos` | number | Puntos sumados (4) |
-| `ranking_pos` | number | Posición después |
+| `{{business_context.template}}` | string | `'Exacto Prode'` |
+| `{{business_context.home_team}}`, `{{business_context.away_team}}` | string | Equipos |
+| `{{business_context.goles_local}}`, `{{business_context.goles_visitante}}` | number | Resultado |
+| `{{business_context.puntos}}` | number | Puntos sumados (4) |
+| `{{business_context.ranking_pos}}` | number | Posición después |
 
 ### 📊 `prode.voice_weekly_summary`
 
 Trigger: bundle paralelo al weekly digest.
 
-| Variable | Tipo | Descripción |
+| Variable en template | Tipo | Descripción |
 |---|---|---|
-| `template` | string | `'Weekly Summary Prode'` |
-| `week_date` | string | Fecha |
-| `leader_nombre`, `leader_puntos` | mixed | Datos del líder |
-| `ranking_position` | number | Posición del user |
-| `total_players` | number | Total jugadores |
-| `pending_bets` | number | Apuestas pendientes |
+| `{{business_context.template}}` | string | `'Weekly Summary Prode'` |
+| `{{business_context.week_date}}` | string | Fecha |
+| `{{business_context.leader_nombre}}`, `{{business_context.leader_puntos}}` | mixed | Datos del líder |
+| `{{business_context.ranking_position}}` | number | Posición del user |
+| `{{business_context.total_players}}` | number | Total jugadores |
+| `{{business_context.pending_bets}}` | number | Apuestas pendientes |
 
 ---
 
@@ -186,24 +251,39 @@ Trigger: bundle paralelo al weekly digest.
 
 1. Buscar el `event_type` exacto (ej `prode.new_leader`)
 2. Decidir el canal (WhatsApp, Email, Voice, etc)
-3. Usar **solo las variables listadas arriba** para ese evento + las de
-   `metadata.user_contact` y `metadata.user_profile` que se mandan en todos
+3. Usar la sintaxis correcta:
+   - `{{user.<campo>}}` para datos del contacto/perfil
+   - `{{business_context.<campo>}}` para datos del evento
 4. Probar con un user de test y verificar la sustitución
 
-## Ejemplo de template WhatsApp para `prode.new_leader`
+## Ejemplo correcto de template WhatsApp para `prode.new_leader`
 
 ```
-👑 *¡Sos el nuevo líder, {{nombre}}!*
+👑 *¡Sos el nuevo líder, {{user.nombre}}!*
 
-Le sacaste el #1 a *{{prev_leader_nombre}}* con
-_{{match.local}} {{match.goles_local}}–{{match.goles_visitante}} {{match.away}}_.
+Le sacaste el #1 a *{{business_context.prev_leader_nombre}}* con
+_{{business_context.match.local}} {{business_context.match.goles_local}}–{{business_context.match.goles_visitante}} {{business_context.match.away}}_.
 
-🔥 Tenés *{{puntos}} pts* en tu planilla _{{planilla_nombre}}_.
+🔥 Tenés *{{business_context.puntos}} pts* en tu planilla _{{user.planilla_nombre}}_.
 
-{{#if tema_equipo}}Como hincha de {{tema_equipo}}, sabés lo que es la presión.{{/if}}
+{{#if user.tema_equipo}}Como hincha de {{user.tema_equipo}}, sabés lo que es la presión.{{/if}}
 
 ¡No lo sueltes! 👉 https://prodecaballito.com/ranking
 ```
+
+---
+
+## Verificación empírica (confirmado con Engage)
+
+| Test | Resultado |
+|---|---|
+| Auto-upsert sincrónico antes de procesar evento | ✅ Funciona |
+| `{{user.nombre}}` resuelve a `user.metadata.nombre` | ✅ Funciona |
+| `{{nombre}}` (sin prefijo) | ❌ Resuelve a `event.payload.nombre` → undefined |
+| `{{business_context.puntos}}` | ✅ Funciona |
+| Cambio en DB → próximo evento manda nuevo valor → contact store actualizado | ✅ Funciona |
+
+Fuente: confirmación del equipo Engage (`delivery-scheduler.ts:141-150`, `events.ts:85-98`).
 
 ---
 
