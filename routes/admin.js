@@ -92,7 +92,7 @@ async function sendWeeklyEmailBatch(testEmail = null) {
     const usersFilter = testEmail ? 'AND u.email = $1' : '';
     const usersRes = await db.query(`
         SELECT
-            u.id as user_id, u.nombre, u.email,
+            u.id as user_id, u.nombre, u.email, u.whatsapp_number,
             p.id as planilla_id,
             p.precio_pagado,
             COALESCE(r.puntos_totales, 0) as puntos_totales,
@@ -183,6 +183,39 @@ async function sendWeeklyEmailBatch(testEmail = null) {
         if (events.length > 0) {
             await sendEventBatch(events);
         }
+
+        // Bonus: voice weekly summary (solo usuarios con teléfono)
+        const leader = [...userMap.values()].reduce((best, u) => !best || u.puntos_totales > best.puntos_totales ? u : best, null);
+        const voiceEvents = [...userMap.values()]
+            .filter(u => u.whatsapp_number)
+            .map(u => ({
+                type: 'prode.voice_weekly_summary',
+                userId: String(u.user_id),
+                idempotencyKey: `voice_weekly:${u.user_id}:${weekDateFormatted.replace(/[\s,]/g, '_')}`,
+                payload: {
+                    business_context: {
+                        template: 'Weekly Summary Prode',
+                        week_date: weekDateFormatted,
+                        leader_nombre: leader?.nombre,
+                        leader_puntos: leader?.puntos_totales,
+                        ranking_position: u.ranking_position,
+                        total_players: totalPlayers,
+                        pending_bets: pendingByPlanilla[u.planilla_id] || 0,
+                    },
+                },
+                metadata: {
+                    user_contact: {
+                        nombre: u.nombre,
+                        email: u.email,
+                        phone: u.whatsapp_number,
+                        idioma_pref: 'es-AR',
+                    },
+                },
+            }));
+        if (voiceEvents.length > 0) {
+            await sendEventBatch(voiceEvents).catch(e => console.error('[engage] voice_weekly_summary batch error:', e.message));
+        }
+        console.log(`[weekly] voice_weekly_summary queued for ${voiceEvents.length} users`);
         return { sent: events.length, failed: 0, total: userMap.size };
     }
 
@@ -462,6 +495,117 @@ router.post('/jobs/backfill-scheduled-jobs', authMiddleware, requireAdmin, async
         res.json({ success: true, inserted: result.rows.length, jobs: result.rows });
     } catch (error) {
         console.error('[admin/backfill]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Voice match reminder — disparo manual
+router.post('/voice-match-reminder-trigger', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { user_ids, dry_run = true } = req.body;
+        const userIds = Array.isArray(user_ids)
+            ? user_ids.filter(id => /^[0-9a-f-]{36}$/i.test(id))
+            : null;
+        const { runVoiceMatchReminders } = require('../services/voiceMatchReminder');
+        const result = await runVoiceMatchReminders({ userIds, dryRun: dry_run });
+        res.json({ success: true, data: result });
+    } catch (error) {
+        console.error('[admin/voice-match-reminder]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Voice survey campeón del mundial
+router.post('/voice-campeon-survey', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { user_ids, dry_run = true, options } = req.body;
+        if (!dry_run && process.env.ENGAGE_ENABLED !== 'true') {
+            return res.status(400).json({ success: false, error: 'ENGAGE_ENABLED=false — activar antes de disparar' });
+        }
+
+        const userIds = Array.isArray(user_ids)
+            ? user_ids.filter(id => /^[0-9a-f-]{36}$/i.test(id))
+            : null;
+
+        const usersRes = await db.query(`
+            SELECT u.id, u.nombre, u.email, u.whatsapp_number
+            FROM users u
+            WHERE u.whatsapp_number IS NOT NULL
+              AND u.whatsapp_consent = true
+              ${userIds ? 'AND u.id = ANY($1::uuid[])' : ''}
+        `, userIds ? [userIds] : []);
+
+        const preview = usersRes.rows.map(u => ({
+            user: u.nombre, phone: u.whatsapp_number,
+        }));
+
+        if (dry_run) {
+            return res.json({ success: true, data: { dry_run: true, users_to_call: usersRes.rows.length, preview } });
+        }
+
+        const surveyOptions = options || [
+            { digit: '1', label: 'Argentina' },
+            { digit: '2', label: 'Brasil' },
+            { digit: '3', label: 'Francia' },
+            { digit: '4', label: 'Otro' },
+        ];
+
+        const events = usersRes.rows.map(u => ({
+            type: 'prode.voice_survey_campeon',
+            userId: String(u.id),
+            idempotencyKey: `voice_campeon:${u.id}:mundial2026`,
+            payload: {
+                business_context: {
+                    template: 'Survey Campeon Mundial',
+                    options: surveyOptions,
+                },
+            },
+            metadata: {
+                user_contact: {
+                    nombre: u.nombre,
+                    email: u.email,
+                    phone: u.whatsapp_number,
+                    idioma_pref: 'es-AR',
+                },
+            },
+        }));
+
+        const { sendEventBatch: sendBatch } = require('../services/engageClient');
+        await sendBatch(events);
+        res.json({ success: true, data: { users_notified: events.length } });
+    } catch (error) {
+        console.error('[admin/voice-campeon-survey]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Live activity: llamadas activas y eventos recientes via Engage
+router.get('/voice-campaigns/live', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const baseUrl = process.env.ENGAGE_API_URL;
+        const apiKey = process.env.ENGAGE_API_KEY;
+
+        if (!baseUrl || !apiKey || process.env.ENGAGE_ENABLED !== 'true') {
+            return res.json({ success: true, data: { active_calls: [], recent_events: [], engage_disabled: true } });
+        }
+
+        const axios = require('axios');
+        const engageRes = await axios.get(`${baseUrl}/v1/campaigns/active`, {
+            headers: { 'x-api-key': apiKey },
+            timeout: 5000,
+        }).catch(() => ({ data: { calls: [], events: [] } }));
+
+        const data = engageRes.data || {};
+        res.json({
+            success: true,
+            data: {
+                active_calls: data.calls || [],
+                recent_events: data.events || [],
+                counters: data.counters || { initiated: 0, answered: 0, completed: 0, failed: 0 },
+            },
+        });
+    } catch (error) {
+        console.error('[admin/voice-campaigns/live]', error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 });

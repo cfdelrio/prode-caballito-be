@@ -496,6 +496,31 @@ async function actualizarRanking(matchId = null) {
                      VALUES ($1, 'ranking_passed', $2, 'sent', NOW())`,
                     [row.user_id, JSON.stringify(payload)]
                 ).catch(err => console.error(`[ranking-passed] insert failed user=${row.user_id}:`, err.message));
+
+                if (process.env.ENGAGE_ENABLED === 'true' && row.whatsapp_number) {
+                    sendEvent({
+                        type: 'prode.voice_trash_talk',
+                        userId: String(row.user_id),
+                        idempotencyKey: `voice_trash_talk:${row.user_id}:${matchId || 'recalc'}:${overtaker.user_id}`,
+                        payload: {
+                            business_context: {
+                                template: 'Trash Talk Prode',
+                                rival_nombre: overtaker.nombre,
+                                rival_pos: prevPos,
+                                mi_pos: row.position,
+                                rival_puntos: overtaker.puntos_totales,
+                                mis_puntos: row.puntos_totales,
+                            },
+                        },
+                        metadata: {
+                            user_contact: {
+                                nombre: row.nombre,
+                                phone: row.whatsapp_number,
+                                idioma_pref: 'es-AR',
+                            },
+                        },
+                    }).catch(err => console.error(`[engage] voice_trash_talk error user=${row.user_id}:`, err.message));
+                }
             }
         }
 
