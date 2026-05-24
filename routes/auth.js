@@ -7,6 +7,7 @@ const validation_1 = require("../middleware/validation");
 const auth_1 = require("../middleware/auth");
 const rateLimit_1 = require("../middleware/rateLimit");
 const email_1 = require("../services/email");
+const { sendEvent } = require("../services/engageClient");
 const { createLogger } = require("../utils/logger");
 const logger = createLogger('auth');
 const router = (0, express_1.Router)();
@@ -171,7 +172,19 @@ router.post('/register-pending', rateLimit_1.authLimiter, async (req, res) => {
        RETURNING id, nombre, email`, [nombre, email, hash_pass, verificationCode, codeExpiresAt]);
         const pendingReg = result.rows[0];
         try {
-            await (0, email_1.sendVerificationCode)(email, nombre, verificationCode);
+            if (process.env.ENGAGE_ENABLED === 'true') {
+                await sendEvent({
+                    type: 'prode.verification_code',
+                    userId: `pending:${pendingReg.id}`,
+                    idempotencyKey: `verification_code:${pendingReg.id}`,
+                    payload: { code: verificationCode, expiresIn: 900 },
+                    metadata: {
+                        user_contact: { nombre, email, idioma_pref: 'es-AR' },
+                    },
+                });
+            } else {
+                await (0, email_1.sendVerificationCode)(email, nombre, verificationCode);
+            }
             logger.info('Verification email sent', { email });
         }
         catch (emailError) {
@@ -245,7 +258,19 @@ router.post('/resend-code', rateLimit_1.authLimiter, async (req, res) => {
        SET verification_code = $1, code_expires_at = $2 
        WHERE id = $3`, [verificationCode, codeExpiresAt, pendingId]);
         try {
-            await (0, email_1.sendVerificationCode)(pending.email, pending.nombre, verificationCode);
+            if (process.env.ENGAGE_ENABLED === 'true') {
+                await sendEvent({
+                    type: 'prode.verification_code',
+                    userId: `pending:${pendingId}`,
+                    idempotencyKey: `verification_code:${pendingId}`,
+                    payload: { code: verificationCode, expiresIn: 900 },
+                    metadata: {
+                        user_contact: { nombre: pending.nombre, email: pending.email, idioma_pref: 'es-AR' },
+                    },
+                });
+            } else {
+                await (0, email_1.sendVerificationCode)(pending.email, pending.nombre, verificationCode);
+            }
             logger.info('Verification code resent', { email: pending.email });
         }
         catch (emailError) {

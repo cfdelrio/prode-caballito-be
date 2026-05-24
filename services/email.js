@@ -22,58 +22,94 @@ const sendEmail = async ({ to, subject, html }) => {
 exports.sendEmail = sendEmail;
 const sendRankingUpdateEmail = async (userEmail, userName, newPosition, previousPosition, points) => {
     const movement = previousPosition ? (previousPosition - newPosition) : 0;
-    let emoji = '';
-    let message = '';
+    let headerEmoji = '';
+    let headerTitle = '';
+    let messageHtml = '';
+    let subject = '';
+    let bgColor = '#FFFFFF';
+
     if (movement > 0) {
-        emoji = '📈';
-        message = `Subiste ${movement} posición${movement > 1 ? 'es' : ''}!`;
+        headerEmoji = '📈';
+        headerTitle = '¡SUBISTE!';
+        messageHtml = `Avanzaste <strong>${movement} posición${movement > 1 ? 'es' : ''}</strong> en el ranking. De #${previousPosition} a #${newPosition}.`;
+        subject = `📈 Subiste ${movement} lugar${movement > 1 ? 'es' : ''} — ahora sos #${newPosition}`;
+        bgColor = '#ECFDF5';
+    } else if (movement < 0) {
+        headerEmoji = '📉';
+        headerTitle = 'BAJASTE EN EL RANKING';
+        messageHtml = `Bajaste <strong>${Math.abs(movement)} posición${Math.abs(movement) > 1 ? 'es' : ''}</strong>. Ahora estás #${newPosition}. El próximo partido, tu revancha.`;
+        subject = `📉 Bajaste ${Math.abs(movement)} lugar${Math.abs(movement) > 1 ? 'es' : ''} — estás #${newPosition}`;
+        bgColor = '#FEF2F2';
+    } else if (previousPosition === null) {
+        headerEmoji = '⭐';
+        headerTitle = '¡BIENVENIDO AL RANKING!';
+        messageHtml = `Ya estás #${newPosition}. El podio te espera.`;
+        subject = `⭐ ¡Entraste al ranking! Posición #${newPosition}`;
+        bgColor = '#FFFBEB';
+    } else {
+        headerEmoji = '👀';
+        headerTitle = 'MANTUVISTE TU POSICIÓN';
+        messageHtml = `Seguís siendo <strong>#${newPosition}</strong> con ${points} puntos. La próxima fecha puede cambiar todo.`;
+        subject = `👀 Mantuviste #${newPosition} — ${points} pts`;
+        bgColor = '#FFFFFF';
     }
-    else if (movement < 0) {
-        emoji = '📉';
-        message = `Bajaste ${Math.abs(movement)} posición${Math.abs(movement) > 1 ? 'es' : ''}`;
-    }
-    else if (previousPosition === null) {
-        emoji = '🎉';
-        message = '¡Bienvenido al ranking!';
-    }
-    else {
-        emoji = '➖';
-        message = 'Mantuviste tu posición';
-    }
-    const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; padding: 30px; }
-        h1 { color: #1a56db; }
-        .ranking { background: #f3f4f6; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0; }
-        .position { font-size: 48px; font-weight: bold; color: #1a56db; }
-        .points { color: #6b7280; }
-        .footer { text-align: center; color: #9ca3af; margin-top: 20px; font-size: 12px; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h1>🏆 PRODE Caballito</h1>
-        <p>Hola ${userName},</p>
-        <p>${emoji} ${message}</p>
-        <div class="ranking">
-          <div class="position">#${newPosition}</div>
-          <div class="points">${points} puntos</div>
-        </div>
-        <p>Ver todos los resultados en: <a href="https://prodecaballito.com/ranking">PRODE Caballito</a></p>
-        <div class="footer">
-          © 2026 PRODE Caballito
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background-color:#F1F5F9;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr><td align="center" style="padding:32px 16px;">
+    <table width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);">
+      <!-- Header -->
+      <tr><td style="background-color:#001A4B;padding:32px 32px 24px;text-align:center;">
+        <p style="margin:0;font-size:48px;line-height:1;">${headerEmoji}</p>
+        <p style="margin:10px 0 4px;font-size:22px;font-weight:900;color:#FFCC00;font-family:Arial,sans-serif;letter-spacing:1px;">${headerTitle}</p>
+        <p style="margin:0;font-size:13px;color:#93C5FD;font-family:Arial,sans-serif;">PRODE Caballito</p>
+      </td></tr>
+      <!-- Body -->
+      <tr><td style="background-color:${bgColor};padding:32px 32px 28px;">
+        <p style="margin:0 0 8px;font-size:18px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;">Hola, ${userName}! 👋</p>
+        <p style="margin:0 0 24px;font-size:15px;color:#374151;font-family:Arial,sans-serif;line-height:1.6;">
+          ${messageHtml}
+        </p>
+        <!-- Ranking card -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">
+          <tr>
+            <td width="50%" style="padding:4px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#EFF6FF;border-radius:12px;padding:16px;text-align:center;">
+                <tr><td>
+                  <p style="margin:0;font-size:11px;color:#3B82F6;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:1px;font-weight:bold;">Tu posición</p>
+                  <p style="margin:4px 0 0;font-size:36px;font-weight:900;color:#1D4ED8;font-family:Arial,sans-serif;">#${newPosition}</p>
+                </td></tr>
+              </table>
+            </td>
+            <td width="50%" style="padding:4px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F0FDF4;border-radius:12px;padding:16px;text-align:center;">
+                <tr><td>
+                  <p style="margin:0;font-size:11px;color:#16A34A;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:1px;font-weight:bold;">Tus puntos</p>
+                  <p style="margin:4px 0 0;font-size:36px;font-weight:900;color:#15803D;font-family:Arial,sans-serif;">${points}</p>
+                </td></tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr><td align="center">
+            <a href="https://prodecaballito.com/ranking" style="display:inline-block;background-color:#001A4B;color:#FFFFFF;text-decoration:none;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;padding:14px 36px;border-radius:50px;">Ver ranking completo →</a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <!-- Footer -->
+      <tr><td style="background-color:#F8FAFC;padding:16px 32px;text-align:center;">
+        <p style="margin:0;font-size:11px;color:#9CA3AF;font-family:Arial,sans-serif;">prodecaballito.com</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+
     await (0, exports.sendEmail)({
         to: userEmail,
-        subject: `🏆 PRODE Caballito - Posición #${newPosition}`,
+        subject,
         html,
     });
 };
@@ -771,6 +807,18 @@ const sendWeeklyEmail = async (email, {
     const tightMatchHtml = buildTightMatchSection(tightMatch);
     const upcomingHtml = buildUpcomingSection(upcomingMatches, appUrl);
 
+    // Determinar segmento para subject dinámico
+    let emailSubject = `⚽ Tu resumen semanal — PRODE Caballito`;
+    if (userPosition === 1) {
+      emailSubject = `👑 Seguís primero, ${userName}. Esta semana podés agrandar la ventaja.`;
+    } else if (userPosition <= 3) {
+      emailSubject = `🏆 Estás en el podio, ${userName}. Esta semana mantené la posición.`;
+    } else if (userPosition <= 10) {
+      emailSubject = `📈 En la zona caliente, ${userName}. Esta semana podés hacer más.`;
+    } else {
+      emailSubject = `⚽ Esta semana tu prode puede cambiar todo, ${userName}.`;
+    }
+
     const pendingBadge = pendingBets > 0
         ? `<table cellpadding="0" cellspacing="0" border="0" style="margin-top:20px;">
             <tr>
@@ -899,7 +947,7 @@ const sendWeeklyEmail = async (email, {
 
     await (0, exports.sendEmail)({
         to: email,
-        subject: `⚽ Tu resumen semanal — PRODE Caballito`,
+        subject: emailSubject,
         html,
     });
 };
@@ -908,7 +956,30 @@ exports.sendWeeklyEmail = sendWeeklyEmail;
 // ── Post-matchday summary email ──────────────────────────────────────────────
 
 const sendPostMatchdayEmail = async ({ userEmail, userName, matchdayName, points, rankInMatchday, globalPosition, topName, topPoints, totalPlanillas }) => {
+    const isWinner = rankInMatchday === 1;
+    const isPodio = rankInMatchday >= 2 && rankInMatchday <= 3;
     const posEmoji = rankInMatchday === 1 ? '🥇' : rankInMatchday === 2 ? '🥈' : rankInMatchday === 3 ? '🥉' : `#${rankInMatchday}`;
+
+    let headerEmoji = '🏁';
+    let headerTitle = `${matchdayName} — CERRADA`;
+    let titlePrefix = `🏁 ${matchdayName} cerrada`;
+    let introText = `Así quedaron tus resultados en <strong>${matchdayName}</strong>:`;
+    let bodyColor = '#FFFFFF';
+
+    if (isWinner) {
+      headerEmoji = '👑';
+      headerTitle = `¡GANASTE ${matchdayName.toUpperCase()}!`;
+      titlePrefix = `👑 ¡Ganaste ${matchdayName}!`;
+      introText = `<strong>${points} puntos</strong> — el crack de la fecha. El PRODE habla de vos.`;
+      bodyColor = '#FFFBEB';
+    } else if (isPodio) {
+      headerEmoji = '🏆';
+      headerTitle = `TOP 3 EN ${matchdayName.toUpperCase()}`;
+      titlePrefix = `🏆 Terminaste #${rankInMatchday} en ${matchdayName}`;
+      introText = `<strong>${points} puntos</strong> te pusieron #${rankInMatchday}. El ganador hizo ${topPoints} pts.`;
+      bodyColor = '#F0FDF4';
+    }
+
     const globalStr = globalPosition != null ? `Estás #${globalPosition} en el ranking general.` : '';
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:0;background-color:#F1F5F9;">
@@ -917,15 +988,15 @@ const sendPostMatchdayEmail = async ({ userEmail, userName, matchdayName, points
     <table width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);">
       <!-- Header -->
       <tr><td style="background-color:#001A4B;padding:32px 32px 24px;text-align:center;">
-        <p style="margin:0;font-size:40px;line-height:1;">🏁</p>
-        <p style="margin:10px 0 4px;font-size:20px;font-weight:900;color:#FFCC00;font-family:Arial,sans-serif;letter-spacing:1px;">${matchdayName} — CERRADA</p>
+        <p style="margin:0;font-size:40px;line-height:1;">${headerEmoji}</p>
+        <p style="margin:10px 0 4px;font-size:20px;font-weight:900;color:#FFCC00;font-family:Arial,sans-serif;letter-spacing:1px;">${headerTitle}</p>
         <p style="margin:0;font-size:13px;color:#93C5FD;font-family:Arial,sans-serif;">PRODE Caballito</p>
       </td></tr>
       <!-- Body -->
-      <tr><td style="background-color:#FFFFFF;padding:32px 32px 28px;">
+      <tr><td style="background-color:${bodyColor};padding:32px 32px 28px;">
         <p style="margin:0 0 8px;font-size:18px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;">¡Hola, ${userName}! 👋</p>
         <p style="margin:0 0 24px;font-size:15px;color:#374151;font-family:Arial,sans-serif;line-height:1.6;">
-          Así quedaron tus resultados en <strong>${matchdayName}</strong>:
+          ${introText}
         </p>
         <!-- Score card -->
         <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;">
@@ -971,9 +1042,15 @@ const sendPostMatchdayEmail = async ({ userEmail, userName, matchdayName, points
 </table>
 </body></html>`;
 
+    const subject = isWinner
+      ? `👑 ${userName}, ganaste ${matchdayName} con ${points} pts`
+      : isPodio
+        ? `🏆 Terminaste #${rankInMatchday} en ${matchdayName} — ${points} pts`
+        : `🏁 ${matchdayName} cerrada — ${points} pts | #${rankInMatchday} de ${totalPlanillas}`;
+
     await sendEmail({
         to: userEmail,
-        subject: `🏁 ${matchdayName} cerrada — Hiciste ${points} pts`,
+        subject,
         html,
     });
 };
