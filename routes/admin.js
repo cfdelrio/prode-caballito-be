@@ -10,6 +10,7 @@ const { runValidation } = require("../services/scoreValidator");
 const { runConcurrent } = require("../services/concurrency");
 const { runCutoffReminders } = require("../services/reminderCutoff");
 const { sendEventBatch } = require("../services/engageClient");
+const { buildEngageMetadata } = require("../utils/engageHelpers");
 
 const router = Router();
 
@@ -171,13 +172,13 @@ async function sendWeeklyEmailBatch(testEmail = null) {
                         upcoming_matches: upcomingMatches,
                     },
                 },
-                metadata: {
-                    user_contact: {
-                        nombre: userData.nombre,
-                        email: userData.email,
-                        idioma_pref: 'es-AR',
-                    },
-                },
+                metadata: buildEngageMetadata(userData, {
+                    planilla_nombre: userData.nombre_planilla,
+                    planilla_id: userData.planilla_id,
+                    estado_pago: userData.precio_pagado,
+                    ranking_position: userData.ranking_position,
+                    puntos_totales: userData.puntos_totales,
+                }),
             };
         });
         if (events.length > 0) {
@@ -203,14 +204,13 @@ async function sendWeeklyEmailBatch(testEmail = null) {
                         pending_bets: pendingByPlanilla[u.planilla_id] || 0,
                     },
                 },
-                metadata: {
-                    user_contact: {
-                        nombre: u.nombre,
-                        email: u.email,
-                        phone: u.whatsapp_number,
-                        idioma_pref: 'es-AR',
-                    },
-                },
+                metadata: buildEngageMetadata(u, {
+                    planilla_nombre: u.nombre_planilla,
+                    planilla_id: u.planilla_id,
+                    estado_pago: u.precio_pagado,
+                    ranking_position: u.ranking_position,
+                    puntos_totales: u.puntos_totales,
+                }),
             }));
         if (voiceEvents.length > 0) {
             await sendEventBatch(voiceEvents).catch(e => console.error('[engage] voice_weekly_summary batch error:', e.message));
