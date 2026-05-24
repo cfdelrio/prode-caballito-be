@@ -34,6 +34,7 @@ jest.mock('../routes', () => ({
   pushRoutes: require('express').Router(),
   adminRoutes: require('express').Router(),
   voiceRoutes: require('express').Router(),
+  pollsRoutes: require('express').Router(),
 }))
 jest.mock('../services/whatsapp', () => ({ sendWhatsApp: jest.fn() }))
 jest.mock('../services/concurrency', () => ({ runConcurrent: jest.fn().mockResolvedValue([]) }))

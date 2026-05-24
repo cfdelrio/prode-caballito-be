@@ -1,4 +1,4 @@
-name: Migrate Voice Survey Tables
+name: Migrate Public Polls Tables
 
 on:
   workflow_dispatch:
@@ -32,7 +32,7 @@ jobs:
         run: npm ci
 
       - name: Run migration
-        run: node scripts/migrate-voice-surveys.js
+        run: node scripts/migrate-polls.js
         env:
           DB_HOST:     ${{ secrets.DB_HOST }}
           DB_PORT:     ${{ secrets.DB_PORT }}
@@ -44,4 +44,4 @@ jobs:
 
       - name: Done
         if: success()
-        run: echo "✅ voice_surveys y voice_survey_responses creadas correctamente"
+        run: echo "✅ public_polls, poll_options y poll_votes creadas y seeded correctamente"
