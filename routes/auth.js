@@ -316,11 +316,27 @@ router.post('/complete-registration', rateLimit_1.authLimiter, async (req, res) 
         await connection_1.db.query(`INSERT INTO audit_log (user_id, action, entity_type, new_value) 
        VALUES ($1, 'complete_registration', 'users', $2)`, [user.id, JSON.stringify({ tema_equipo })]);
         
-        try {
-            await (0, email_1.sendWelcomeEmail)(user.email, user.nombre);
-            logger.info('Welcome email sent', { email: user.email });
-        } catch (emailError) {
-            logger.error('Welcome email failed', emailError);
+        if (process.env.ENGAGE_ENABLED === 'true') {
+            sendEvent({
+                type: 'prode.welcome',
+                userId: String(user.id),
+                idempotencyKey: `welcome:${user.id}`,
+                payload: { business_context: {} },
+                metadata: {
+                    user_contact: {
+                        nombre: user.nombre,
+                        email: user.email,
+                        idioma_pref: user.idioma_pref || 'es-AR',
+                    },
+                },
+            }).catch(err => logger.error('Welcome engage failed', { err: err.message }));
+        } else {
+            try {
+                await (0, email_1.sendWelcomeEmail)(user.email, user.nombre);
+                logger.info('Welcome email sent', { email: user.email });
+            } catch (emailError) {
+                logger.error('Welcome email failed', emailError);
+            }
         }
         
         res.json({

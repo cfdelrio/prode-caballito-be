@@ -4,6 +4,7 @@ const { db } = require('../db/connection')
 const { pushToUser } = require('./push')
 const { sendSMSWithRetry } = require('./sms')
 const { sendEmail } = require('./email')
+const { sendEvent } = require('./engageClient')
 
 const REMINDER_TYPE = 'payment_7days'
 
@@ -60,19 +61,43 @@ async function runPaymentReminders() {
             [p.user_id, JSON.stringify(payload)]
         ).catch(err => console.error(`[payment-reminder] insert failed user=${p.user_id}:`, err.message))
 
-        if (p.email) {
-            sendEmail({
-                to: p.email,
-                subject: `💸 Tu planilla "${p.nombre_planilla}" todavía no está paga`,
-                html: buildPaymentEmailHtml({ nombre: p.nombre, planillaNombre: p.nombre_planilla, torneoName: p.torneo_name }),
-            }).catch(err => console.error(`[payment-reminder] email failed user=${p.user_id}:`, err.message))
-        }
+        if (process.env.ENGAGE_ENABLED === 'true') {
+            sendEvent({
+                type: 'prode.payment_pending',
+                userId: String(p.user_id),
+                idempotencyKey: `payment_pending:${p.user_id}:${p.first_match_id}`,
+                payload: {
+                    business_context: {
+                        planilla_nombre: p.nombre_planilla,
+                        torneo_name: p.torneo_name,
+                        days_left: daysLeft,
+                    },
+                },
+                metadata: {
+                    user_contact: {
+                        nombre: p.nombre,
+                        email: p.email,
+                        phone: p.whatsapp_number,
+                        whatsapp_consent: p.whatsapp_consent,
+                        idioma_pref: 'es-AR',
+                    },
+                },
+            }).catch(err => console.error(`[payment-reminder] engage failed user=${p.user_id}:`, err.message))
+        } else {
+            if (p.email) {
+                sendEmail({
+                    to: p.email,
+                    subject: `💸 Tu planilla "${p.nombre_planilla}" todavía no está paga`,
+                    html: buildPaymentEmailHtml({ nombre: p.nombre, planillaNombre: p.nombre_planilla, torneoName: p.torneo_name }),
+                }).catch(err => console.error(`[payment-reminder] email failed user=${p.user_id}:`, err.message))
+            }
 
-        if (p.whatsapp_number && p.whatsapp_consent) {
-            sendSMSWithRetry({
-                to: p.whatsapp_number,
-                body: `💸 "${p.nombre_planilla}" para ${p.torneo_name} sigue sin pagar. Arrancan en ${daysLeft} día${daysLeft === 1 ? '' : 's'}. 👉 prodecaballito.com/planillas`,
-            }).catch(err => console.error(`[payment-reminder] SMS failed user=${p.user_id}:`, err.message))
+            if (p.whatsapp_number && p.whatsapp_consent) {
+                sendSMSWithRetry({
+                    to: p.whatsapp_number,
+                    body: `💸 "${p.nombre_planilla}" para ${p.torneo_name} sigue sin pagar. Arrancan en ${daysLeft} día${daysLeft === 1 ? '' : 's'}. 👉 prodecaballito.com/planillas`,
+                }).catch(err => console.error(`[payment-reminder] SMS failed user=${p.user_id}:`, err.message))
+            }
         }
 
         notified++

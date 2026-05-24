@@ -51,6 +51,33 @@ app.post('/api/internal/broadcast-whatsapp', authMiddleware, requireAdmin, async
         if (!message || !message.trim()) {
             return res.status(400).json({ success: false, error: 'Mensaje requerido' });
         }
+        if (process.env.ENGAGE_ENABLED === 'true') {
+            const { sendEventBatch } = require('./services/engageClient');
+            const usersRes = await db.query(
+                `SELECT id, nombre, email, whatsapp_number, whatsapp_consent FROM users WHERE whatsapp_number IS NOT NULL AND whatsapp_consent = true`
+            );
+            const events = usersRes.rows.map(u => ({
+                type: 'prode.broadcast_manual',
+                userId: String(u.id),
+                payload: {
+                    business_context: { message },
+                },
+                metadata: {
+                    user_contact: {
+                        nombre: u.nombre,
+                        email: u.email,
+                        phone: u.whatsapp_number,
+                        whatsapp_consent: u.whatsapp_consent,
+                        idioma_pref: 'es-AR',
+                    },
+                },
+            }));
+            if (events.length > 0) {
+                await sendEventBatch(events);
+            }
+            console.log(`[broadcast-whatsapp] engage batch queued: ${events.length} users`);
+            return res.json({ success: true, data: { total: events.length, sent: events.length, failed: 0 } });
+        }
         const result = await db.query(
             `SELECT whatsapp_number FROM users WHERE whatsapp_number IS NOT NULL AND whatsapp_consent = true`
         );
@@ -174,6 +201,14 @@ const handler = async (event, context) => {
         const { runPaymentReminders } = require('./services/reminderPayment');
         const result = await runPaymentReminders();
         console.log('[prode.payment-reminder] Result:', result);
+        return { statusCode: 200, body: JSON.stringify(result) };
+    }
+
+    // EventBridge daily: T-5d voice survey for users with pending bets (via Engage / voice.orkestai)
+    if (event.source === 'prode.voice-5day-reminder' || event['detail-type'] === 'voice-5day-reminder') {
+        const { runVoice5dayReminders } = require('./services/voice5dayReminder');
+        const result = await runVoice5dayReminders();
+        console.log('[prode.voice-5day-reminder] Result:', result);
         return { statusCode: 200, body: JSON.stringify(result) };
     }
 

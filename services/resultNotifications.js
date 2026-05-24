@@ -5,6 +5,7 @@ const { calcularPuntaje } = require('./scoring');
 const { sendNewLeaderEmail, sendResultEmail } = require('./email');
 const { sendSMS } = require('./sms');
 const { pushToUser, pushToAll } = require('./push');
+const { sendEvent } = require('./engageClient');
 
 /**
  * Fires all post-result notifications (email, WhatsApp, push) for a published
@@ -60,15 +61,47 @@ async function _notifyNewLeader({ rankingRows, prevLeader, match, resultLocal, r
         }), 'sent']
     ).catch(e => console.error('Notification new leader error:', e.message));
 
-    await sendNewLeaderEmail({
-        userEmail: newLeader.email,
-        userName: newLeader.nombre,
-        puntos: newLeader.puntos_totales,
-        homeTeam: match.home_team,
-        awayTeam: match.away_team,
-        resultLocal,
-        resultVisitante,
-    }).catch(e => console.error('Email new leader error:', e.message));
+    if (process.env.ENGAGE_ENABLED === 'true') {
+        await sendEvent({
+            type: 'prode.new_leader',
+            userId: String(newLeader.user_id),
+            idempotencyKey: `new_leader:${newLeader.user_id}:${match.id}`,
+            payload: {
+                business_context: {
+                    puntos: newLeader.puntos_totales,
+                    prev_leader_nombre: prevName,
+                    match: { local: match.home_team, away: match.away_team, goles_local: resultLocal, goles_visitante: resultVisitante },
+                },
+            },
+            metadata: {
+                user_contact: {
+                    nombre: newLeader.nombre,
+                    email: newLeader.email,
+                    phone: newLeader.whatsapp_number,
+                    whatsapp_consent: newLeader.whatsapp_consent,
+                    idioma_pref: 'es-AR',
+                },
+            },
+        }).catch(e => console.error('[engage] new leader error:', e.message));
+    } else {
+        await sendNewLeaderEmail({
+            userEmail: newLeader.email,
+            userName: newLeader.nombre,
+            puntos: newLeader.puntos_totales,
+            homeTeam: match.home_team,
+            awayTeam: match.away_team,
+            resultLocal,
+            resultVisitante,
+        }).catch(e => console.error('Email new leader error:', e.message));
+
+        if (newLeader.whatsapp_number && newLeader.whatsapp_consent) {
+            const smsBody = prevName
+                ? `👑 ¡Sos el nuevo líder! Le sacaste el #1 a ${prevName}. Tenés ${newLeader.puntos_totales} pts. 👉 prodecaballito.com/ranking`
+                : `🔥 ¡Sos el nuevo líder del PRODE Caballito! Con ${newLeader.puntos_totales} pts estás en el puesto #1. ¡No lo sueltes! 👉 prodecaballito.com/ranking`;
+            await sendSMS({ to: newLeader.whatsapp_number, body: smsBody })
+                .catch(e => console.error('[sms] new leader error:', e.message));
+        }
+    }
 
     await pushToUser(newLeader.user_id, {
         title: '🔥 ¡Sos el nuevo líder!',
@@ -76,14 +109,6 @@ async function _notifyNewLeader({ rankingRows, prevLeader, match, resultLocal, r
         url: '/ranking',
         icon: '/favicon.svg',
     }).catch(e => console.error('[push] new leader error:', e.message));
-
-    if (newLeader.whatsapp_number && newLeader.whatsapp_consent) {
-        const smsBody = prevName
-            ? `👑 ¡Sos el nuevo líder! Le sacaste el #1 a ${prevName}. Tenés ${newLeader.puntos_totales} pts. 👉 prodecaballito.com/ranking`
-            : `🔥 ¡Sos el nuevo líder del PRODE Caballito! Con ${newLeader.puntos_totales} pts estás en el puesto #1. ¡No lo sueltes! 👉 prodecaballito.com/ranking`;
-        await sendSMS({ to: newLeader.whatsapp_number, body: smsBody })
-            .catch(e => console.error('[sms] new leader error:', e.message));
-    }
 }
 
 async function _notifyBetResults({ bets, rankingMap, match, resultLocal, resultVisitante }) {
@@ -127,25 +152,50 @@ async function _notifyBetResults({ bets, rankingMap, match, resultLocal, resultV
                 [userId, match.id, 'result', JSON.stringify({ title, body }), 'sent']
             ).catch(e => console.error(`Notification insert error for ${userId}:`, e.message));
 
-            await sendResultEmail({
-                userEmail: userRanking.email,
-                userName: userRanking.nombre,
-                homeTeam: match.home_team,
-                awayTeam: match.away_team,
-                resultLocal,
-                resultVisitante,
-                betLocal: bet.goles_local,
-                betVisitante: bet.goles_visitante,
-                puntos: score.puntos,
-                rankingPos: userRanking.position,
-            }).catch(e => console.error(`Result email error for ${userId}:`, e.message));
+            if (process.env.ENGAGE_ENABLED === 'true') {
+                await sendEvent({
+                    type: 'prode.result_published.individual',
+                    userId: String(userId),
+                    idempotencyKey: `result_published:${userId}:${match.id}`,
+                    payload: {
+                        business_context: {
+                            match: { local: match.home_team, away: match.away_team, goles_local: resultLocal, goles_visitante: resultVisitante },
+                            bet: { goles_local: bet.goles_local, goles_visitante: bet.goles_visitante, puntos_obtenidos: score.puntos },
+                            ranking_after: { position: userRanking.position },
+                            outcome: isExacto ? 'exacto' : score.puntos > 0 ? 'resultado' : null,
+                        },
+                    },
+                    metadata: {
+                        user_contact: {
+                            nombre: userRanking.nombre,
+                            email: userRanking.email,
+                            phone: userRanking.whatsapp_number,
+                            whatsapp_consent: userRanking.whatsapp_consent,
+                            idioma_pref: 'es-AR',
+                        },
+                    },
+                }).catch(e => console.error(`[engage] result error for ${userId}:`, e.message));
+            } else {
+                await sendResultEmail({
+                    userEmail: userRanking.email,
+                    userName: userRanking.nombre,
+                    homeTeam: match.home_team,
+                    awayTeam: match.away_team,
+                    resultLocal,
+                    resultVisitante,
+                    betLocal: bet.goles_local,
+                    betVisitante: bet.goles_visitante,
+                    puntos: score.puntos,
+                    rankingPos: userRanking.position,
+                }).catch(e => console.error(`Result email error for ${userId}:`, e.message));
 
-            if (userRanking.whatsapp_number && userRanking.whatsapp_consent) {
-                const smsBody = score.puntos > 0
-                    ? `⚽ ${match.home_team} ${resultLocal}–${resultVisitante} ${match.away_team} | Tu pronóstico: ${bet.goles_local}-${bet.goles_visitante} → +${score.puntos}pts\nEstás #${userRanking.position} en el ranking 👉 prodecaballito.com/ranking`
-                    : `⚽ ${match.home_team} ${resultLocal}–${resultVisitante} ${match.away_team} | Tu pronóstico: ${bet.goles_local}-${bet.goles_visitante} → 0 pts\nSeguís #${userRanking.position} 👉 prodecaballito.com/ranking`;
-                await sendSMS({ to: userRanking.whatsapp_number, body: smsBody })
-                    .catch(e => console.error(`[sms] result error for ${userId}:`, e.message));
+                if (userRanking.whatsapp_number && userRanking.whatsapp_consent) {
+                    const smsBody = score.puntos > 0
+                        ? `⚽ ${match.home_team} ${resultLocal}–${resultVisitante} ${match.away_team} | Tu pronóstico: ${bet.goles_local}-${bet.goles_visitante} → +${score.puntos}pts\nEstás #${userRanking.position} en el ranking 👉 prodecaballito.com/ranking`
+                        : `⚽ ${match.home_team} ${resultLocal}–${resultVisitante} ${match.away_team} | Tu pronóstico: ${bet.goles_local}-${bet.goles_visitante} → 0 pts\nSeguís #${userRanking.position} 👉 prodecaballito.com/ranking`;
+                    await sendSMS({ to: userRanking.whatsapp_number, body: smsBody })
+                        .catch(e => console.error(`[sms] result error for ${userId}:`, e.message));
+                }
             }
         } catch (betErr) {
             console.error('Result notification error for bet:', betErr.message);
@@ -181,6 +231,20 @@ async function _pushBroadcast({ match, resultLocal, resultVisitante }) {
         url: '/ranking',
         icon: '/favicon.svg',
     }).catch(e => console.error('[push] broadcast error:', e.message));
+
+    if (process.env.ENGAGE_ENABLED === 'true') {
+        sendEvent({
+            type: 'prode.result_published.broadcast',
+            userId: 'broadcast',
+            idempotencyKey: `result_broadcast:${match.id}`,
+            payload: {
+                business_context: {
+                    match: { local: match.home_team, away: match.away_team, goles_local: resultLocal, goles_visitante: resultVisitante },
+                    exactos_count: exactosCount,
+                },
+            },
+        }).catch(e => console.error('[engage] broadcast error:', e.message));
+    }
 }
 
 async function _notifyAdmins({ match, resultLocal, resultVisitante }) {
