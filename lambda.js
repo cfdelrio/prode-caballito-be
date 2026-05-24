@@ -51,6 +51,33 @@ app.post('/api/internal/broadcast-whatsapp', authMiddleware, requireAdmin, async
         if (!message || !message.trim()) {
             return res.status(400).json({ success: false, error: 'Mensaje requerido' });
         }
+        if (process.env.ENGAGE_ENABLED === 'true') {
+            const { sendEventBatch } = require('./services/engageClient');
+            const usersRes = await db.query(
+                `SELECT id, nombre, email, whatsapp_number, whatsapp_consent FROM users WHERE whatsapp_number IS NOT NULL AND whatsapp_consent = true`
+            );
+            const events = usersRes.rows.map(u => ({
+                type: 'prode.broadcast_manual',
+                userId: String(u.id),
+                payload: {
+                    business_context: { message },
+                },
+                metadata: {
+                    user_contact: {
+                        nombre: u.nombre,
+                        email: u.email,
+                        phone: u.whatsapp_number,
+                        whatsapp_consent: u.whatsapp_consent,
+                        idioma_pref: 'es-AR',
+                    },
+                },
+            }));
+            if (events.length > 0) {
+                await sendEventBatch(events);
+            }
+            console.log(`[broadcast-whatsapp] engage batch queued: ${events.length} users`);
+            return res.json({ success: true, data: { total: events.length, sent: events.length, failed: 0 } });
+        }
         const result = await db.query(
             `SELECT whatsapp_number FROM users WHERE whatsapp_number IS NOT NULL AND whatsapp_consent = true`
         );
