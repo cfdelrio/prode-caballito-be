@@ -499,15 +499,16 @@ router.post('/jobs/backfill-scheduled-jobs', authMiddleware, requireAdmin, async
     }
 });
 
-// Voice match reminder — disparo manual
+// Voice match reminder — disparo manual.
+// Body: { user_ids?: uuid[], dry_run?: boolean (default true), skip_window?: boolean (testing only) }
 router.post('/voice-match-reminder-trigger', authMiddleware, requireAdmin, async (req, res) => {
     try {
-        const { user_ids, dry_run = true } = req.body;
+        const { user_ids, dry_run = true, skip_window = false } = req.body;
         const userIds = Array.isArray(user_ids)
             ? user_ids.filter(id => /^[0-9a-f-]{36}$/i.test(id))
             : null;
         const { runVoiceMatchReminders } = require('../services/voiceMatchReminder');
-        const result = await runVoiceMatchReminders({ userIds, dryRun: dry_run });
+        const result = await runVoiceMatchReminders({ userIds, dryRun: dry_run, skipWindow: skip_window });
         res.json({ success: true, data: result });
     } catch (error) {
         console.error('[admin/voice-match-reminder]', error.message);
