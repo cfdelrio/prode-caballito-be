@@ -204,6 +204,14 @@ const handler = async (event, context) => {
         return { statusCode: 200, body: JSON.stringify(result) };
     }
 
+    // EventBridge daily: T-5d voice survey for users with pending bets (via Engage / voice.orkestai)
+    if (event.source === 'prode.voice-5day-reminder' || event['detail-type'] === 'voice-5day-reminder') {
+        const { runVoice5dayReminders } = require('./services/voice5dayReminder');
+        const result = await runVoice5dayReminders();
+        console.log('[prode.voice-5day-reminder] Result:', result);
+        return { statusCode: 200, body: JSON.stringify(result) };
+    }
+
     // Ad-hoc query: matches with cutoff in the next N minutes
     if (event.source === 'prode.upcoming-cutoffs') {
         const minutes = Math.min(event.minutes || 60, 1440);
