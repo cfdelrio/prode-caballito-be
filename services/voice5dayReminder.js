@@ -17,9 +17,14 @@ const TEMPLATE_NAME = 'Onboarding Workcup 2026';
  * Idempotent via reminder_sent(user_id, match_id, reminder_type='voice_5days')
  * keyed on the first match of the tournament. Skips silently if
  * ENGAGE_ENABLED !== 'true' — there is no Twilio fallback for this trigger.
+ *
+ * @param {object} [opts]
+ * @param {string[]} [opts.userIds]  Restrict to specific user UUIDs (admin testing).
+ * @param {boolean}  [opts.dryRun]   Skip reminder_sent insert + Engage publish; just
+ *                                   return what would have been sent. Useful for preview.
  */
-async function runVoice5dayReminders() {
-    if (process.env.ENGAGE_ENABLED !== 'true') {
+async function runVoice5dayReminders({ userIds = null, dryRun = false } = {}) {
+    if (process.env.ENGAGE_ENABLED !== 'true' && !dryRun) {
         console.log('[voice-5day] ENGAGE_ENABLED=false — skipping (no Twilio fallback for this trigger)');
         return { tournaments_in_window: 0, users_notified: 0, skipped: 0, engage_disabled: true };
     }
@@ -43,10 +48,17 @@ async function runVoice5dayReminders() {
 
     let notified = 0;
     let skipped = 0;
+    const preview = [];
 
     for (const t of tournamentsRes.rows) {
         // Users with a planilla in this tournament + at least one pending bet
         // + a phone number on file (Engage filters by consent on its side).
+        const params = [t.tournament_id];
+        let userFilter = '';
+        if (userIds && userIds.length > 0) {
+            params.push(userIds);
+            userFilter = ` AND u.id = ANY($2::uuid[])`;
+        }
         const usersRes = await db.query(`
             SELECT u.id AS user_id, u.nombre, u.email,
                    u.whatsapp_number, u.whatsapp_consent,
@@ -57,23 +69,26 @@ async function runVoice5dayReminders() {
             LEFT JOIN bets b ON b.planilla_id = p.id AND b.match_id = m2.id
             WHERE p.tournament_id = $1
               AND u.whatsapp_number IS NOT NULL
+              ${userFilter}
             GROUP BY u.id, u.nombre, u.email, u.whatsapp_number, u.whatsapp_consent
             HAVING COUNT(m2.id) FILTER (WHERE b.id IS NULL) > 0
-        `, [t.tournament_id]);
+        `, params);
 
         const events = [];
         for (const u of usersRes.rows) {
-            const insertRes = await db.query(
-                `INSERT INTO reminder_sent (user_id, match_id, reminder_type)
-                 VALUES ($1, $2, $3)
-                 ON CONFLICT (user_id, match_id, reminder_type) DO NOTHING
-                 RETURNING user_id`,
-                [u.user_id, t.first_match_id, REMINDER_TYPE]
-            ).catch(() => ({ rows: [] }));
+            if (!dryRun) {
+                const insertRes = await db.query(
+                    `INSERT INTO reminder_sent (user_id, match_id, reminder_type)
+                     VALUES ($1, $2, $3)
+                     ON CONFLICT (user_id, match_id, reminder_type) DO NOTHING
+                     RETURNING user_id`,
+                    [u.user_id, t.first_match_id, REMINDER_TYPE]
+                ).catch(() => ({ rows: [] }));
 
-            if (insertRes.rows.length === 0) { skipped++; continue; }
+                if (insertRes.rows.length === 0) { skipped++; continue; }
+            }
 
-            events.push({
+            const event = {
                 type: 'prode.voice_survey',
                 userId: String(u.user_id),
                 idempotencyKey: `voice_5days:${u.user_id}:${t.first_match_id}`,
@@ -94,22 +109,26 @@ async function runVoice5dayReminders() {
                         idioma_pref: 'es-AR',
                     },
                 },
-            });
+            };
+            events.push(event);
+            if (dryRun) preview.push({ tournament: t.tournament_name, user: u.nombre, phone: u.whatsapp_number, pending: parseInt(u.pending_count) });
             notified++;
         }
 
-        if (events.length > 0) {
+        if (events.length > 0 && !dryRun) {
             await sendEventBatch(events).catch(err =>
                 console.error(`[voice-5day] engage batch failed tournament=${t.tournament_id}:`, err.message)
             );
         }
     }
 
-    console.log(`[voice-5day] tournaments_in_window=${tournamentsRes.rows.length} notified=${notified} skipped=${skipped}`);
+    console.log(`[voice-5day] tournaments_in_window=${tournamentsRes.rows.length} notified=${notified} skipped=${skipped} dryRun=${dryRun}`);
     return {
         tournaments_in_window: tournamentsRes.rows.length,
         users_notified: notified,
         skipped,
+        dry_run: dryRun,
+        ...(dryRun ? { preview } : {}),
     };
 }
 

@@ -231,6 +231,25 @@ router.post('/weekly-email', authMiddleware, requireAdmin, adminWeeklyEmailValid
     }
 });
 
+// POST /api/admin/voice-5day-trigger
+// Body opcional:
+//   - user_ids: string[]  → restringe a esos UUIDs (testing)
+//   - dry_run: boolean    → no inserta reminder_sent ni publica a Engage; devuelve preview
+router.post('/voice-5day-trigger', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { user_ids: userIds, dry_run: dryRun } = req.body || {};
+        if (userIds && !Array.isArray(userIds)) {
+            return res.status(400).json({ success: false, error: 'user_ids debe ser array' });
+        }
+        const { runVoice5dayReminders } = require('../services/voice5dayReminder');
+        const result = await runVoice5dayReminders({ userIds: userIds || null, dryRun: dryRun === true });
+        res.json({ success: true, data: result });
+    } catch (error) {
+        console.error('[admin] voice-5day-trigger error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // POST /api/admin/winner-image
 // Body: { image_url: "...", matchday_label: "Fecha 3", user_name: "...", points: 42 }
 router.post('/winner-image', authMiddleware, requireAdmin, adminWinnerImageValidation, async (req, res) => {
