@@ -3,6 +3,7 @@
 const { db } = require('../db/connection');
 const { pushToUser } = require('./push');
 const { sendSMSWithRetry } = require('./sms');
+const { sendEvent } = require('./engageClient');
 
 /**
  * Process opt-in pre-kickoff reminders saved when the user placed the bet
@@ -53,7 +54,29 @@ async function processBetReminders() {
                 console.error(`[bet-reminders] push failed user=${r.user_id} match=${r.match_id}:`, err.message)
             );
 
-            if (r.whatsapp_number && r.whatsapp_consent) {
+            if (process.env.ENGAGE_ENABLED === 'true') {
+                await sendEvent({
+                    type: 'prode.bet_reminder',
+                    userId: String(r.user_id),
+                    idempotencyKey: `bet_reminder:${r.user_id}:${r.match_id}`,
+                    payload: {
+                        business_context: {
+                            match: { local: r.home_team, away: r.away_team },
+                            remind_minutes: r.remind_minutes,
+                            bet: hasBet ? { goles_local: r.goles_local, goles_visitante: r.goles_visitante } : null,
+                        },
+                    },
+                    metadata: {
+                        user_contact: {
+                            phone: r.whatsapp_number,
+                            whatsapp_consent: r.whatsapp_consent,
+                            idioma_pref: 'es-AR',
+                        },
+                    },
+                }).catch(err =>
+                    console.error(`[bet-reminders] engage failed user=${r.user_id} match=${r.match_id}:`, err.message)
+                );
+            } else if (r.whatsapp_number && r.whatsapp_consent) {
                 const body = hasBet
                     ? `⚽ En ${r.remind_minutes} min — ${r.home_team} vs ${r.away_team} | Tu pronóstico: ${score} 🤞 prodecaballito.com`
                     : `⚽ ${r.home_team} vs ${r.away_team} empieza en ${r.remind_minutes} min — todavía podés apostar 👉 prodecaballito.com/apuestas`;

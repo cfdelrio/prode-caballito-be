@@ -5,6 +5,7 @@ const connection_1 = require("../db/connection");
 const notificationService_1 = require("./notificationService");
 const { pushToUser } = require('../services/push');
 const { sendSMSWithRetry } = require('../services/sms');
+const { sendEvent } = require('../services/engageClient');
 exports.schedulerService = {
     async scheduleMatchJobs(match) {
         console.log(`Scheduling jobs for match ${match.id}: ${match.home_team} vs ${match.away_team}`);
@@ -118,13 +119,35 @@ exports.schedulerService = {
                 goles_visitante: betMap[m.id]?.goles_visitante ?? null,
             }));
 
-            await sendPlanillaCierreEmail({
-                userEmail: pl.email,
-                userName: pl.nombre,
-                planillaNombre: pl.nombre_planilla,
-                torneoName,
-                matches,
-            }).catch(e => console.error(`[scheduler] planilla-cierre email error user=${pl.user_id}:`, e.message));
+            if (process.env.ENGAGE_ENABLED === 'true') {
+                await sendEvent({
+                    type: 'prode.planilla_cierre',
+                    userId: String(pl.user_id),
+                    idempotencyKey: `planilla_cierre:${pl.user_id}:${firstMatchId}`,
+                    payload: {
+                        business_context: {
+                            planilla_nombre: pl.nombre_planilla,
+                            torneo_name: torneoName,
+                            matches,
+                        },
+                    },
+                    metadata: {
+                        user_contact: {
+                            nombre: pl.nombre,
+                            email: pl.email,
+                            idioma_pref: 'es-AR',
+                        },
+                    },
+                }).catch(e => console.error(`[scheduler] engage planilla-cierre error user=${pl.user_id}:`, e.message));
+            } else {
+                await sendPlanillaCierreEmail({
+                    userEmail: pl.email,
+                    userName: pl.nombre,
+                    planillaNombre: pl.nombre_planilla,
+                    torneoName,
+                    matches,
+                }).catch(e => console.error(`[scheduler] planilla-cierre email error user=${pl.user_id}:`, e.message));
+            }
         }
         console.log(`[scheduler] planilla-cierre emails sent for tournament=${tournamentId}`);
     },
@@ -172,8 +195,27 @@ exports.schedulerService = {
                     // Push notification
                     await pushToUser(user.user_id, pushPayload)
                         .catch(err => console.error(`[scheduler] push failed user=${user.user_id}:`, err.message));
-                    // SMS if user consented
-                    if (user.whatsapp_number && user.whatsapp_consent) {
+                    // SMS if user consented (or via Engage)
+                    if (process.env.ENGAGE_ENABLED === 'true') {
+                        await sendEvent({
+                            type: isKickoff ? 'prode.kickoff' : 'prode.second_half',
+                            userId: String(user.user_id),
+                            idempotencyKey: `${isKickoff ? 'kickoff' : 'second_half'}:${user.user_id}:${job.matchId}`,
+                            payload: {
+                                business_context: {
+                                    match: { local: job.homeTeam, away: job.awayTeam },
+                                    bet: hasBet ? { goles_local: user.goles_local, goles_visitante: user.goles_visitante } : null,
+                                },
+                            },
+                            metadata: {
+                                user_contact: {
+                                    phone: user.whatsapp_number,
+                                    whatsapp_consent: user.whatsapp_consent,
+                                    idioma_pref: 'es-AR',
+                                },
+                            },
+                        }).catch(err => console.error(`[scheduler] engage failed user=${user.user_id}:`, err.message));
+                    } else if (user.whatsapp_number && user.whatsapp_consent) {
                         await sendSMSWithRetry({ to: user.whatsapp_number, body: smsBody })
                             .catch(err => console.error(`[scheduler] sms failed (after retries) user=${user.user_id}:`, err.message));
                     }

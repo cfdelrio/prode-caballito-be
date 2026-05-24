@@ -7,6 +7,7 @@ const scoring_1 = require("../services/scoring");
 const https = require("https");
 const { sendWhatsAppTemplate } = require("../services/whatsapp");
 const { runConcurrent } = require("../services/concurrency");
+const { sendEvent, sendEventBatch } = require("../services/engageClient");
 const router = (0, express_1.Router)();
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -191,8 +192,9 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
     }
 
     // ── Persistir ganador en carousel config (con o sin imagen) ─────────────
+    let imageUrl = null;
     try {
-      const imageUrl = imageUri ? await uploadImageToS3(imageUri) : null;
+      imageUrl = imageUri ? await uploadImageToS3(imageUri) : null;
 
       const entry = {
         image_url: imageUrl,
@@ -226,61 +228,120 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
     const recipients = allEmails.length > 0 ? allEmails : [winnerEmail];
     console.log(`Sending to ${recipients.length} recipients`);
 
-    if (imageUri) {
-      function sendImagemail(to, subject, message) {
-        const body = JSON.stringify({ to, uri: imageUri, subject, message });
-        return new Promise((resolve, reject) => {
-          const req = https.request({
-            hostname: process.env.API_HOSTNAME || 't49euho172.execute-api.us-east-1.amazonaws.com',
-            path: '/prod/api/imagemail',
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-            timeout: 60000,
-          }, (res) => { res.resume(); resolve(res.statusCode); });
-          req.on('error', reject);
-          req.on('timeout', () => { req.destroy(); reject(new Error('imagemail timeout')); });
-          req.write(body);
-          req.end();
-        });
+    if (process.env.ENGAGE_ENABLED === 'true') {
+      sendEvent({
+        type: 'prode.winner.personal',
+        userId: String(winner.user_id),
+        idempotencyKey: `winner_personal:${winner.user_id}:${matchday.id}`,
+        payload: {
+          business_context: {
+            winner_name: winner.user_name,
+            matchday_name: matchday.name,
+            points: winner.points,
+            scorer_line: scorerNames || motivational,
+            ...(imageUrl ? { image_url: imageUrl } : {}),
+          },
+        },
+        metadata: {
+          user_contact: {
+            nombre: winner.user_name,
+            email: winnerEmail,
+            idioma_pref: 'es-AR',
+          },
+        },
+      }).catch(e => console.error('[winner] engage personal error:', e.message));
+
+      try {
+        const broadcastUsersRes = await connection_1.db.query(
+          `SELECT id, nombre, email, whatsapp_number, whatsapp_consent FROM users WHERE email IS NOT NULL AND email != ''`
+        );
+        const broadcastEvents = broadcastUsersRes.rows.map(u => ({
+          type: 'prode.winner.broadcast',
+          userId: String(u.id),
+          idempotencyKey: `winner_broadcast:${u.id}:${matchday.id}`,
+          payload: {
+            business_context: {
+              winner_name: winner.user_name,
+              matchday_name: matchday.name,
+              points: winner.points,
+              scorer_line: scorerNames || motivational,
+              ...(imageUrl ? { image_url: imageUrl } : {}),
+            },
+          },
+          metadata: {
+            user_contact: {
+              nombre: u.nombre,
+              email: u.email,
+              phone: u.whatsapp_number,
+              whatsapp_consent: u.whatsapp_consent,
+              idioma_pref: 'es-AR',
+            },
+          },
+        }));
+        if (broadcastEvents.length > 0) {
+          await sendEventBatch(broadcastEvents);
+        }
+        console.log(`[winner] Engage queued: personal + broadcast (${broadcastEvents.length} users)`);
+      } catch (broadcastErr) {
+        console.error('[winner] engage broadcast error:', broadcastErr.message);
+      }
+    } else {
+      if (imageUri) {
+        function sendImagemail(to, subject, message) {
+          const body = JSON.stringify({ to, uri: imageUri, subject, message });
+          return new Promise((resolve, reject) => {
+            const req = https.request({
+              hostname: process.env.API_HOSTNAME || 't49euho172.execute-api.us-east-1.amazonaws.com',
+              path: '/prod/api/imagemail',
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+              timeout: 60000,
+            }, (res) => { res.resume(); resolve(res.statusCode); });
+            req.on('error', reject);
+            req.on('timeout', () => { req.destroy(); reject(new Error('imagemail timeout')); });
+            req.write(body);
+            req.end();
+          });
+        }
+
+        await runConcurrent(recipients, async (email) => {
+          const isWinner = email === winnerEmail;
+          const subject = isWinner
+            ? `🏆 ¡Ganaste ${matchday.name}!`
+            : `🏆 ${winner.user_name} ganó ${matchday.name}`;
+          const scorerLine = scorerNames ? `Goleadores de la fecha: ${scorerNames}` : motivational;
+          const message = isWinner
+            ? `¡Felicitaciones ${winner.user_name}! Ganaste con ${winner.points} puntos.\n${scorerLine}`
+            : `${winner.user_name} ganó ${matchday.name} con ${winner.points} puntos.\n${scorerLine}`;
+          const status = await sendImagemail(email, subject, message);
+          console.log(`Email sent to ${email} — status ${status}`);
+        }, 10);
+      } else {
+        console.log('[winner] Sin imagen — emails de card omitidos');
       }
 
-      await runConcurrent(recipients, async (email) => {
-        const isWinner = email === winnerEmail;
-        const subject = isWinner
-          ? `🏆 ¡Ganaste ${matchday.name}!`
-          : `🏆 ${winner.user_name} ganó ${matchday.name}`;
-        const scorerLine = scorerNames ? `Goleadores de la fecha: ${scorerNames}` : motivational;
-        const message = isWinner
-          ? `¡Felicitaciones ${winner.user_name}! Ganaste con ${winner.points} puntos.\n${scorerLine}`
-          : `${winner.user_name} ganó ${matchday.name} con ${winner.points} puntos.\n${scorerLine}`;
-        const status = await sendImagemail(email, subject, message);
-        console.log(`Email sent to ${email} — status ${status}`);
-      }, 10);
-    } else {
-      console.log('[winner] Sin imagen — emails de card omitidos');
+      try {
+          const waUsers = await connection_1.db.query(
+              `SELECT whatsapp_number FROM users WHERE whatsapp_number IS NOT NULL AND whatsapp_consent = true`
+          );
+          await runConcurrent(waUsers.rows, (u) =>
+              sendWhatsAppTemplate({
+                  to: u.whatsapp_number,
+                  templateName: 'prode_ganador_fecha',
+                  variables: {
+                      '1': winner.user_name,
+                      '2': matchday.name,
+                      '3': String(winner.points),
+                  },
+              }).catch(e => console.error(`Winner WA error for ${u.whatsapp_number}:`, e.message))
+          , 10);
+          console.log(`Winner WA sent to ${waUsers.rows.length} users`);
+      } catch(waErr) {
+          console.error('Winner WA broadcast error:', waErr.message);
+      }
     }
 
-    console.log('Winner notification complete — all emails sent');
-
-    try {
-        const waUsers = await connection_1.db.query(
-            `SELECT whatsapp_number FROM users WHERE whatsapp_number IS NOT NULL AND whatsapp_consent = true`
-        );
-        await runConcurrent(waUsers.rows, (u) =>
-            sendWhatsAppTemplate({
-                to: u.whatsapp_number,
-                templateName: 'prode_ganador_fecha',
-                variables: {
-                    '1': winner.user_name,
-                    '2': matchday.name,
-                    '3': String(winner.points),
-                },
-            }).catch(e => console.error(`Winner WA error for ${u.whatsapp_number}:`, e.message))
-        , 10);
-        console.log(`Winner WA sent to ${waUsers.rows.length} users`);
-    } catch(waErr) {
-        console.error('Winner WA broadcast error:', waErr.message);
-    }
+    console.log('Winner notification complete');
 
     try {
         const { pushToUser, pushToAll } = require('../services/push');
@@ -366,11 +427,17 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
   // Query all user emails for the email notifications
   const allUserIds = rows.map(r => r.user_id);
   const emailsRes = await connection_1.db.query(
-    `SELECT id, email FROM users WHERE id = ANY($1::uuid[]) AND email IS NOT NULL AND email != ''`,
+    `SELECT id, email, whatsapp_number, whatsapp_consent FROM users WHERE id = ANY($1::uuid[])`,
     [allUserIds]
   );
   const emailMap = {};
-  for (const row of emailsRes.rows) emailMap[row.id] = row.email;
+  const phoneMap = {};
+  const consentMap = {};
+  for (const row of emailsRes.rows) {
+    if (row.email) emailMap[row.id] = row.email;
+    phoneMap[row.id] = row.whatsapp_number;
+    consentMap[row.id] = row.whatsapp_consent;
+  }
 
   // Also query global ranking positions for each planilla
   const rankingRes = await connection_1.db.query(
@@ -414,7 +481,34 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
       [r.user_id, JSON.stringify(summaryPayload)]
     ).catch(err => console.error(`[matchday-close] summary insert failed user=${r.user_id}:`, err.message));
 
-    if (userEmail) {
+    if (process.env.ENGAGE_ENABLED === 'true') {
+      sendEvent({
+        type: 'prode.matchday_summary',
+        userId: String(r.user_id),
+        idempotencyKey: `matchday_summary:${r.user_id}:${matchdayId}`,
+        payload: {
+          business_context: {
+            matchday_name: matchday.name,
+            points: r.points,
+            rank_in_matchday: r.rank,
+            global_position: globalPosition,
+            total_planillas: totalPlanillas,
+            top_name: top.user_name,
+            top_points: top.points,
+            is_winner: isWinner,
+          },
+        },
+        metadata: {
+          user_contact: {
+            nombre: r.user_name,
+            email: userEmail,
+            phone: phoneMap[r.user_id],
+            whatsapp_consent: consentMap[r.user_id],
+            idioma_pref: 'es-AR',
+          },
+        },
+      }).catch(err => console.error(`[matchday-close] engage summary failed user=${r.user_id}:`, err.message));
+    } else if (userEmail) {
       sendPostMatchdayEmail({
         userEmail,
         userName: r.user_name,
@@ -449,6 +543,27 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
          VALUES ($1, 'personal_record', $2, 'sent', NOW())`,
         [r.user_id, JSON.stringify(recordPayload)]
       ).catch(err => console.error(`[matchday-close] record insert failed user=${r.user_id}:`, err.message));
+      if (process.env.ENGAGE_ENABLED === 'true') {
+        sendEvent({
+          type: 'prode.personal_record',
+          userId: String(r.user_id),
+          idempotencyKey: `personal_record:${r.user_id}:${matchdayId}`,
+          payload: {
+            business_context: {
+              points: r.points,
+              prev_max: parseInt(maxPts),
+              matchday_name: matchday.name,
+            },
+          },
+          metadata: {
+            user_contact: {
+              phone: phoneMap[r.user_id],
+              whatsapp_consent: consentMap[r.user_id],
+              idioma_pref: 'es-AR',
+            },
+          },
+        }).catch(err => console.error(`[matchday-close] engage record failed user=${r.user_id}:`, err.message));
+      }
     }
 
     // ── Streak de exactos ──────────────────────────────────────────────────
@@ -488,6 +603,23 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
          VALUES ($1, 'streak_exactos', $2, 'sent', NOW())`,
         [r.user_id, JSON.stringify(streakPayload)]
       ).catch(err => console.error(`[matchday-close] streak insert failed user=${r.user_id}:`, err.message));
+      if (process.env.ENGAGE_ENABLED === 'true') {
+        sendEvent({
+          type: 'prode.streak_exactos',
+          userId: String(r.user_id),
+          idempotencyKey: `streak_exactos:${r.user_id}:${matchdayId}`,
+          payload: {
+            business_context: { streak, matchday_name: matchday.name },
+          },
+          metadata: {
+            user_contact: {
+              phone: phoneMap[r.user_id],
+              whatsapp_consent: consentMap[r.user_id],
+              idioma_pref: 'es-AR',
+            },
+          },
+        }).catch(err => console.error(`[matchday-close] engage streak failed user=${r.user_id}:`, err.message));
+      }
     }
   }
 }

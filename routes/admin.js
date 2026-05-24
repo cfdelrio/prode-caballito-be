@@ -9,6 +9,7 @@ const { sendWeeklyEmail } = require("../services/email");
 const { runValidation } = require("../services/scoreValidator");
 const { runConcurrent } = require("../services/concurrency");
 const { runCutoffReminders } = require("../services/reminderCutoff");
+const { sendEventBatch } = require("../services/engageClient");
 
 const router = Router();
 
@@ -146,6 +147,44 @@ async function sendWeeklyEmailBatch(testEmail = null) {
     const appUrl = 'https://prodecaballito.com/apuestas';
     const unsubscribeUrl = 'https://prodecaballito.com';
     let sent = 0, failed = 0;
+
+    if (process.env.ENGAGE_ENABLED === 'true') {
+        const events = [...userMap.values()].map(userData => {
+            const bestRound = bestRoundByPlanilla[userData.planilla_id];
+            const pendingBets = pendingByPlanilla[userData.planilla_id] || 0;
+            const diferenciaPuntos = Math.max(0, top5Threshold - userData.puntos_totales);
+            return {
+                type: 'prode.weekly_digest',
+                userId: String(userData.user_id),
+                idempotencyKey: `weekly_digest:${userData.user_id}:${weekDateFormatted.replace(/[\s,]/g, '_')}`,
+                payload: {
+                    business_context: {
+                        week_date: weekDateFormatted,
+                        ranking_position: userData.ranking_position,
+                        total_players: totalPlayers,
+                        points: userData.puntos_totales,
+                        best_round: bestRound ? `Fecha ${bestRound.jornada}` : null,
+                        best_round_points: bestRound ? parseInt(bestRound.pts) : 0,
+                        diferencia_puntos: diferenciaPuntos,
+                        pending_bets: pendingBets,
+                        tight_match: tightMatch,
+                        upcoming_matches: upcomingMatches,
+                    },
+                },
+                metadata: {
+                    user_contact: {
+                        nombre: userData.nombre,
+                        email: userData.email,
+                        idioma_pref: 'es-AR',
+                    },
+                },
+            };
+        });
+        if (events.length > 0) {
+            await sendEventBatch(events);
+        }
+        return { sent: events.length, failed: 0, total: userMap.size };
+    }
 
     // Envío en paralelo (10 emails simultáneos)
     const results = await runConcurrent([...userMap.values()], async (userData) => {
