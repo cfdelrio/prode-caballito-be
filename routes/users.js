@@ -333,5 +333,22 @@ router.get('/admin/users-with-planillas', auth_1.authMiddleware, auth_1.requireA
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
+// Gamification: badges + streaks + summary
+router.get('/:id/gamification', auth_1.authMiddleware, validation_1.uuidParam, async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (req.user.userId !== id && req.user.rol !== 'admin') {
+            return res.status(403).json({ success: false, error: 'No autorizado' });
+        }
+        const { getGamificationSummary } = require('../services/gamification');
+        const summary = await getGamificationSummary(id);
+        res.json({ success: true, data: summary });
+    }
+    catch (error) {
+        console.error('[users/gamification] error:', error);
+        res.status(500).json({ success: false, error: 'Error interno del servidor' });
+    }
+});
+
 exports.default = router;
 //# sourceMappingURL=users.js.map

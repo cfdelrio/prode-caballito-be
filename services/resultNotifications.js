@@ -6,6 +6,7 @@ const { sendNewLeaderEmail, sendResultEmail } = require('./email');
 const { sendSMS } = require('./sms');
 const { pushToUser, pushToAll } = require('./push');
 const { sendEvent } = require('./engageClient');
+const { updateStreaks, checkAndAwardBadges } = require('./gamification');
 
 /**
  * Fires all post-result notifications (email, WhatsApp, push) for a published
@@ -175,6 +176,17 @@ async function _notifyBetResults({ bets, rankingMap, match, resultLocal, resultV
                  VALUES ($1, $2, $3, $4, $5, NOW())`,
                 [userId, match.id, 'result', JSON.stringify({ title, body }), 'sent']
             ).catch(e => console.error(`Notification insert error for ${userId}:`, e.message));
+
+            const streakResult = await updateStreaks(bet.planilla_id, match.id, isExacto)
+                .catch(e => { console.error(`[gamification] updateStreaks error for ${userId}:`, e.message); return null; });
+            checkAndAwardBadges({
+                userId,
+                planillaId: bet.planilla_id,
+                matchId: match.id,
+                isExacto,
+                position: userRanking.position,
+                streakResult,
+            }).catch(e => console.error(`[gamification] checkAndAwardBadges error for ${userId}:`, e.message));
 
             if (process.env.ENGAGE_ENABLED === 'true') {
                 await sendEvent({
