@@ -53,8 +53,12 @@ app.post('/api/internal/broadcast-whatsapp', authMiddleware, requireAdmin, async
         }
         if (process.env.ENGAGE_ENABLED === 'true') {
             const { sendEventBatch } = require('./services/engageClient');
+            const { buildEngageMetadata } = require('./utils/engageHelpers');
             const usersRes = await db.query(
-                `SELECT id, nombre, email, whatsapp_number, whatsapp_consent FROM users WHERE whatsapp_number IS NOT NULL AND whatsapp_consent = true`
+                `SELECT id, nombre, email, whatsapp_number, whatsapp_consent,
+                        tema_equipo, foto_url, created_at, rol, idioma_pref
+                 FROM users
+                 WHERE whatsapp_number IS NOT NULL AND whatsapp_consent = true`
             );
             const events = usersRes.rows.map(u => ({
                 type: 'prode.broadcast_manual',
@@ -62,15 +66,7 @@ app.post('/api/internal/broadcast-whatsapp', authMiddleware, requireAdmin, async
                 payload: {
                     business_context: { message },
                 },
-                metadata: {
-                    user_contact: {
-                        nombre: u.nombre,
-                        email: u.email,
-                        phone: u.whatsapp_number,
-                        whatsapp_consent: u.whatsapp_consent,
-                        idioma_pref: 'es-AR',
-                    },
-                },
+                metadata: buildEngageMetadata(u),
             }));
             if (events.length > 0) {
                 await sendEventBatch(events);

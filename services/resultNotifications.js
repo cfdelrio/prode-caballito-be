@@ -7,6 +7,7 @@ const { sendSMS } = require('./sms');
 const { pushToUser, pushToAll } = require('./push');
 const { sendEvent } = require('./engageClient');
 const { updateStreaks, checkAndAwardBadges } = require('./gamification');
+const { buildEngageMetadata } = require('../utils/engageHelpers');
 
 /**
  * Fires all post-result notifications (email, WhatsApp, push) for a published
@@ -23,8 +24,10 @@ const { updateStreaks, checkAndAwardBadges } = require('./gamification');
 async function notifyResult({ match, resultLocal, resultVisitante, bets, prevLeader }) {
     try {
         const rankingRows = await db.query(`
-            SELECT p.user_id, r.position, r.puntos_totales,
-                   u.email, u.nombre, u.whatsapp_number, u.whatsapp_consent
+            SELECT p.user_id, p.id as planilla_id, p.nombre_planilla, p.precio_pagado,
+                   r.position, r.puntos_totales,
+                   u.email, u.nombre, u.whatsapp_number, u.whatsapp_consent,
+                   u.tema_equipo, u.foto_url, u.created_at, u.rol, u.idioma_pref
             FROM ranking r
             JOIN planillas p ON r.planilla_id = p.id
             JOIN users u ON p.user_id = u.id
@@ -74,15 +77,13 @@ async function _notifyNewLeader({ rankingRows, prevLeader, match, resultLocal, r
                     match: { local: match.home_team, away: match.away_team, goles_local: resultLocal, goles_visitante: resultVisitante },
                 },
             },
-            metadata: {
-                user_contact: {
-                    nombre: newLeader.nombre,
-                    email: newLeader.email,
-                    phone: newLeader.whatsapp_number,
-                    whatsapp_consent: newLeader.whatsapp_consent,
-                    idioma_pref: 'es-AR',
-                },
-            },
+            metadata: buildEngageMetadata(newLeader, {
+                planilla_nombre: newLeader.nombre_planilla,
+                planilla_id: newLeader.planilla_id,
+                estado_pago: newLeader.precio_pagado,
+                ranking_position: newLeader.position,
+                puntos_totales: newLeader.puntos_totales,
+            }),
         }).catch(e => console.error('[engage] new leader error:', e.message));
     } else {
         await sendNewLeaderEmail({
@@ -125,13 +126,11 @@ async function _notifyNewLeader({ rankingRows, prevLeader, match, resultLocal, r
                     match_name: `${match.home_team} vs ${match.away_team}`,
                 },
             },
-            metadata: {
-                user_contact: {
-                    nombre: newLeader.nombre,
-                    phone: newLeader.whatsapp_number,
-                    idioma_pref: 'es-AR',
-                },
-            },
+            metadata: buildEngageMetadata(newLeader, {
+                planilla_nombre: newLeader.nombre_planilla,
+                ranking_position: newLeader.position,
+                puntos_totales: newLeader.puntos_totales,
+            }),
         }).catch(e => console.error('[engage] voice_nuevo_lider error:', e.message));
     }
 }
@@ -189,6 +188,16 @@ async function _notifyBetResults({ bets, rankingMap, match, resultLocal, resultV
             }).catch(e => console.error(`[gamification] checkAndAwardBadges error for ${userId}:`, e.message));
 
             if (process.env.ENGAGE_ENABLED === 'true') {
+                const engageExtras = {
+                    planilla_nombre: userRanking.nombre_planilla,
+                    planilla_id: userRanking.planilla_id,
+                    estado_pago: userRanking.precio_pagado,
+                    ranking_position: userRanking.position,
+                    puntos_totales: userRanking.puntos_totales,
+                    current_streak: streakResult?.current || 0,
+                    best_streak: streakResult?.best || 0,
+                };
+
                 await sendEvent({
                     type: 'prode.result_published.individual',
                     userId: String(userId),
@@ -201,15 +210,7 @@ async function _notifyBetResults({ bets, rankingMap, match, resultLocal, resultV
                             outcome: isExacto ? 'exacto' : score.puntos > 0 ? 'resultado' : null,
                         },
                     },
-                    metadata: {
-                        user_contact: {
-                            nombre: userRanking.nombre,
-                            email: userRanking.email,
-                            phone: userRanking.whatsapp_number,
-                            whatsapp_consent: userRanking.whatsapp_consent,
-                            idioma_pref: 'es-AR',
-                        },
-                    },
+                    metadata: buildEngageMetadata(userRanking, engageExtras),
                 }).catch(e => console.error(`[engage] result error for ${userId}:`, e.message));
 
                 if (isExacto && userRanking.whatsapp_number) {
@@ -228,13 +229,7 @@ async function _notifyBetResults({ bets, rankingMap, match, resultLocal, resultV
                                 ranking_pos: userRanking.position,
                             },
                         },
-                        metadata: {
-                            user_contact: {
-                                nombre: userRanking.nombre,
-                                phone: userRanking.whatsapp_number,
-                                idioma_pref: 'es-AR',
-                            },
-                        },
+                        metadata: buildEngageMetadata(userRanking, engageExtras),
                     }).catch(e => console.error(`[engage] voice_perfect_score error for ${userId}:`, e.message));
                 }
             } else {

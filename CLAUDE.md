@@ -8,6 +8,40 @@ Mejorar la app ProdeCaballito sin romper lo existente.
 - Inspiración ESPN / TyC / Mundial.
 - No usar tono casino ni apuestas ilegales.
 
+## 🧭 Boy Scout Rule — OBLIGATORIO
+
+**"Always leave the code cleaner than you found it."**
+
+Cada vez que modifiques código:
+1. Resuelve el problema principal ✅
+2. Mejora **algo** del área tocada (sin refactor gigante)
+3. Deja el código un poco más limpio que lo que encontraste
+
+### Checklist antes de terminar (SIEMPRE)
+- [ ] Nombres claros y consistentes
+- [ ] Código muerto eliminado
+- [ ] Lógica simplificada
+- [ ] Tipos explícitos (TypeScript strict)
+- [ ] Imports organizados
+- [ ] Error handling robusto
+- [ ] Validaciones Zod (inputs críticos)
+- [ ] Lint + typecheck + build sin warnings
+- [ ] Tests existentes siguen pasando
+- [ ] Consistencia con patterns existentes
+- [ ] No hay `any`, `@ts-ignore`, hacks temporales, TODOs vacíos
+
+### Prohibido
+- Copy/paste de lógica
+- Rewrites masivos
+- Cambios cosméticos sin valor
+- Romper arquitectura actual
+- Duplicar código/componentes
+
+### Mentalidad
+Cada commit debe dejar el sistema: más limpio, más claro, más consistente, más mantenible.
+
+---
+
 ## Reglas técnicas
 - Antes de modificar, revisar estructura actual.
 - No inventar endpoints.
