@@ -212,6 +212,13 @@ const handler = async (event, context) => {
         return { statusCode: 200, body: JSON.stringify(result) };
     }
 
+    if (event.source === 'prode.voice-match-reminder' || event['detail-type'] === 'voice-match-reminder') {
+        const { runVoiceMatchReminders } = require('./services/voiceMatchReminder');
+        const result = await runVoiceMatchReminders();
+        console.log('[prode.voice-match-reminder] Result:', result);
+        return { statusCode: 200, body: JSON.stringify(result) };
+    }
+
     // Ad-hoc query: matches with cutoff in the next N minutes
     if (event.source === 'prode.upcoming-cutoffs') {
         const minutes = Math.min(event.minutes || 60, 1440);
