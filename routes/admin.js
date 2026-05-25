@@ -697,5 +697,36 @@ router.get('/engage-verify/recent', authMiddleware, requireAdmin, async (req, re
     }
 });
 
+// DELETE /api/admin/reset-reminder-sent — reset idempotency counters for testing
+router.delete('/reset-reminder-sent', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { reminder_type } = req.query;
+        const validTypes = ['voice_match_reminder', 'voice_5day_reminder', 'cutoff_30min', 'voice_campeon_survey'];
+
+        if (reminder_type && !validTypes.includes(reminder_type)) {
+            return res.status(400).json({
+                success: false,
+                error: `Tipo inválido. Válidos: ${validTypes.join(', ')}`,
+            });
+        }
+
+        const result = reminder_type
+            ? await db.query('DELETE FROM reminder_sent WHERE reminder_type = $1 RETURNING *', [reminder_type])
+            : await db.query('DELETE FROM reminder_sent RETURNING *');
+
+        console.log(`[admin/reset-reminder-sent] Deleted ${result.rowCount} rows (type=${reminder_type || 'ALL'})`);
+        res.json({
+            success: true,
+            data: {
+                deleted: result.rowCount,
+                reminder_type: reminder_type || 'ALL',
+            },
+        });
+    } catch (error) {
+        console.error('[admin/reset-reminder-sent]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 module.exports = router;
 module.exports.sendWeeklyEmailBatch = sendWeeklyEmailBatch;
