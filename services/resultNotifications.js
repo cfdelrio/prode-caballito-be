@@ -49,7 +49,8 @@ async function notifyResult({ match, resultLocal, resultVisitante, bets, prevLea
 
 async function _notifyNewLeader({ rankingRows, prevLeader, match, resultLocal, resultVisitante }) {
     const newLeader = rankingRows[0] || null;
-    if (!newLeader || !prevLeader || newLeader.user_id === prevLeader.user_id) return;
+    // Engage recibe el estado del liderazgo siempre; Engage decide si notificar.
+    if (!newLeader) return;
 
     const prevName = prevLeader?.nombre || null;
     const pushBody = prevName
