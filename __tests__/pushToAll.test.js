@@ -1,5 +1,9 @@
 'use strict'
 
+// VAPID keys must be set before push.js loads — we removed the hardcoded fallback
+process.env.VAPID_PUBLIC_KEY = 'BTest_PublicKey_ForTests_OnlyNotReal'
+process.env.VAPID_PRIVATE_KEY = 'TestPrivateKeyForTestsOnly'
+
 jest.mock('../db/connection', () => ({
   db: { query: jest.fn() },
 }))
