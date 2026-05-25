@@ -9,6 +9,7 @@ jest.mock('axios', () => ({
 jest.mock('../utils/logger', () => ({
   createLogger: () => ({
     info: jest.fn(),
+    warn: jest.fn(),
     error: jest.fn(),
   }),
 }))
@@ -194,6 +195,10 @@ describe('engageClient', () => {
       const fn = jest.fn(async () => { throw err })
 
       const promise = sendWithRetry(fn, 3, 1)
+      // Attach a no-op .catch() before advancing timers so the rejection that
+      // occurs during timer advancement doesn't become an unhandled rejection.
+      // The original `promise` reference still rejects — we assert on it below.
+      promise.catch(() => {})
       await jest.runAllTimersAsync()
 
       await expect(promise).rejects.toThrow('Service unavailable')
