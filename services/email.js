@@ -2,9 +2,16 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendRankingUpdateEmail = exports.sendVerificationCode = exports.sendWelcomeEmail = exports.sendEmail = void 0;
 const { db } = require('../db/connection');
-const RESEND_API_KEY = process.env.RESEND_API_KEY || 're_m3NekW1Y_23CkRZqbVhH24yuU4C6XuNYe';
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+if (!RESEND_API_KEY) {
+    console.warn('[email] RESEND_API_KEY not configured — email sending disabled');
+}
 const FROM_EMAIL = 'noreply@prodecaballito.com';
 const sendEmail = async ({ to, subject, html }) => {
+    if (!RESEND_API_KEY) {
+        console.warn('[email] Skipping email send — RESEND_API_KEY not configured');
+        return null;
+    }
     const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
