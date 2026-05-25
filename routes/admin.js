@@ -446,9 +446,12 @@ router.get('/validate-scores', authMiddleware, requireAdmin, async (req, res) =>
     }
 });
 
+// Cutoff reminders — disparo manual.
+// Body: { dry_run?: boolean (default false), skip_window?: boolean (testing only) }
 router.post('/jobs/cutoff-reminders', authMiddleware, requireAdmin, async (req, res) => {
     try {
-        const result = await runCutoffReminders();
+        const { dry_run = false, skip_window = false } = req.body || {};
+        const result = await runCutoffReminders({ dryRun: dry_run, skipWindow: skip_window });
         res.json({ success: true, data: result });
     } catch (error) {
         console.error('[admin/cutoff-reminders]', error.message);
