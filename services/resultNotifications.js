@@ -49,23 +49,16 @@ async function notifyResult({ match, resultLocal, resultVisitante, bets, prevLea
 
 async function _notifyNewLeader({ rankingRows, prevLeader, match, resultLocal, resultVisitante }) {
     const newLeader = rankingRows[0] || null;
-    // Engage recibe el estado del liderazgo siempre; Engage decide si notificar.
     if (!newLeader) return;
 
+    // leaderChanged = true only when the specific person holding #1 changed
+    const leaderChanged = prevLeader !== null && newLeader.user_id !== prevLeader.user_id;
     const prevName = prevLeader?.nombre || null;
-    const pushBody = prevName
+    const pushBody = leaderChanged && prevName
         ? `Le sacaste el #1 a ${prevName}. Con ${newLeader.puntos_totales} pts.`
         : `Con ${newLeader.puntos_totales} pts estás en el puesto #1 — ¡no lo sueltes!`;
 
-    await db.query(
-        `INSERT INTO notifications (user_id, type, payload, status, sent_at)
-         VALUES ($1, $2, $3, $4, NOW())`,
-        [newLeader.user_id, 'ranking', JSON.stringify({
-            title: '🔥 ¡Sos el nuevo líder!',
-            body: pushBody,
-        }), 'sent']
-    ).catch(e => console.error('Notification new leader error:', e.message));
-
+    // Engage siempre recibe el estado del liderazgo; Engage decide cuándo notificar.
     if (process.env.ENGAGE_ENABLED === 'true') {
         await sendEvent({
             type: 'prode.new_leader',
@@ -86,7 +79,50 @@ async function _notifyNewLeader({ rankingRows, prevLeader, match, resultLocal, r
                 puntos_totales: newLeader.puntos_totales,
             }),
         }).catch(e => console.error('[engage] new leader error:', e.message));
-    } else {
+
+        if (newLeader.whatsapp_number) {
+            await sendEvent({
+                type: 'prode.voice_nuevo_lider',
+                userId: String(newLeader.user_id),
+                idempotencyKey: `voice_nuevo_lider:${newLeader.user_id}:${match.id}`,
+                payload: {
+                    business_context: {
+                        template: 'Nuevo Lider Prode',
+                        nuevo_lider: newLeader.nombre,
+                        puntos: newLeader.puntos_totales,
+                        prev_leader: prevName,
+                        match_name: `${match.home_team} vs ${match.away_team}`,
+                    },
+                },
+                metadata: buildEngageMetadata(newLeader, {
+                    planilla_nombre: newLeader.nombre_planilla,
+                    ranking_position: newLeader.position,
+                    puntos_totales: newLeader.puntos_totales,
+                }),
+            }).catch(e => console.error('[engage] voice_nuevo_lider error:', e.message));
+        }
+    }
+
+    // In-app notification, push, and fallback channels only when leader actually changed
+    if (!leaderChanged) return;
+
+    await db.query(
+        `INSERT INTO notifications (user_id, type, payload, status, sent_at)
+         VALUES ($1, $2, $3, $4, NOW())`,
+        [newLeader.user_id, 'ranking', JSON.stringify({
+            title: '🔥 ¡Sos el nuevo líder!',
+            body: pushBody,
+        }), 'sent']
+    ).catch(e => console.error('Notification new leader error:', e.message));
+
+    await pushToUser(newLeader.user_id, {
+        title: '🔥 ¡Sos el nuevo líder!',
+        body: pushBody,
+        url: '/ranking',
+        icon: '/favicon.svg',
+    }).catch(e => console.error('[push] new leader error:', e.message));
+
+    if (process.env.ENGAGE_ENABLED !== 'true') {
         await sendNewLeaderEmail({
             userEmail: newLeader.email,
             userName: newLeader.nombre,
@@ -104,35 +140,6 @@ async function _notifyNewLeader({ rankingRows, prevLeader, match, resultLocal, r
             await sendSMS({ to: newLeader.whatsapp_number, body: smsBody })
                 .catch(e => console.error('[sms] new leader error:', e.message));
         }
-    }
-
-    await pushToUser(newLeader.user_id, {
-        title: '🔥 ¡Sos el nuevo líder!',
-        body: pushBody,
-        url: '/ranking',
-        icon: '/favicon.svg',
-    }).catch(e => console.error('[push] new leader error:', e.message));
-
-    if (process.env.ENGAGE_ENABLED === 'true' && newLeader.whatsapp_number) {
-        await sendEvent({
-            type: 'prode.voice_nuevo_lider',
-            userId: String(newLeader.user_id),
-            idempotencyKey: `voice_nuevo_lider:${newLeader.user_id}:${match.id}`,
-            payload: {
-                business_context: {
-                    template: 'Nuevo Lider Prode',
-                    nuevo_lider: newLeader.nombre,
-                    puntos: newLeader.puntos_totales,
-                    prev_leader: prevName,
-                    match_name: `${match.home_team} vs ${match.away_team}`,
-                },
-            },
-            metadata: buildEngageMetadata(newLeader, {
-                planilla_nombre: newLeader.nombre_planilla,
-                ranking_position: newLeader.position,
-                puntos_totales: newLeader.puntos_totales,
-            }),
-        }).catch(e => console.error('[engage] voice_nuevo_lider error:', e.message));
     }
 }
 
