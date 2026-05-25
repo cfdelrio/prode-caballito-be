@@ -61,7 +61,7 @@ function buildPayload({ pending, tournamentName, firstMatch, minutesLeft }) {
  * Idempotent: uses reminder_sent (user_id, match_id, reminder_type). For tournament
  * reminders the key match_id is the first scheduled match of the tournament.
  */
-async function runCutoffReminders() {
+async function runCutoffReminders({ dryRun = false, skipWindow = false } = {}) {
     // ── Tournament-level reminders ───────────────────────────────────────────
     const tournamentsRes = await db.query(`
         SELECT t.id AS tournament_id, t.name AS tournament_name,
@@ -78,14 +78,16 @@ async function runCutoffReminders() {
     let notified = 0;
     let skipped = 0;
     let tournamentsInWindow = 0;
+    const skipDetails = [];
+    const preview = [];
 
     for (const t of tournamentsRes.rows) {
-        const minutes = await getTournamentCutoffMinutes(t.tournament_id);
-        const cutoffMs = new Date(t.first_match_start).getTime() - minutes * 60 * 1000;
-        const now = Date.now();
-        const minMs = now + 20 * 60 * 1000;
-        const maxMs = now + 40 * 60 * 1000;
-        if (cutoffMs < minMs || cutoffMs > maxMs) continue;
+        if (!skipWindow) {
+            const minutes = await getTournamentCutoffMinutes(t.tournament_id);
+            const cutoffMs = new Date(t.first_match_start).getTime() - minutes * 60 * 1000;
+            const now = Date.now();
+            if (cutoffMs < now + 20 * 60 * 1000 || cutoffMs > now + 40 * 60 * 1000) continue;
+        }
         tournamentsInWindow++;
 
         // Users with a planilla in this tournament who have at least one missing bet.
@@ -108,17 +110,31 @@ async function runCutoffReminders() {
         `, [t.tournament_id]);
 
         for (const row of missingRes.rows) {
-            const insertRes = await db.query(
-                `INSERT INTO reminder_sent (user_id, match_id, reminder_type)
-                 VALUES ($1, $2, $3)
-                 ON CONFLICT (user_id, match_id, reminder_type) DO NOTHING
-                 RETURNING match_id`,
-                [row.user_id, t.first_match_id, REMINDER_TYPE]
-            );
-            if (insertRes.rows.length === 0) { skipped++; continue; }
+            if (!dryRun) {
+                const insertRes = await db.query(
+                    `INSERT INTO reminder_sent (user_id, match_id, reminder_type)
+                     VALUES ($1, $2, $3)
+                     ON CONFLICT (user_id, match_id, reminder_type) DO NOTHING
+                     RETURNING match_id`,
+                    [row.user_id, t.first_match_id, REMINDER_TYPE]
+                );
+                if (insertRes.rows.length === 0) {
+                    skipped++;
+                    skipDetails.push({ user_id: row.user_id, nombre: row.nombre, reason: 'already_sent' });
+                    continue;
+                }
+            }
 
             const pending = Number(row.missing_count);
+            const cutoffMinutes = await getTournamentCutoffMinutes(t.tournament_id);
+            const cutoffMs = new Date(t.first_match_start).getTime() - cutoffMinutes * 60 * 1000;
             const minutesLeft = Math.round((cutoffMs - Date.now()) / 60000);
+
+            if (dryRun) {
+                preview.push({ tournament: t.tournament_name, user: row.nombre, pending, minutes_left: minutesLeft, match: `${t.first_home} vs ${t.first_away}` });
+                notified++;
+                continue;
+            }
             const firstMatch = { home_team: t.first_home, away_team: t.first_away };
             const payload = buildPayload({ pending, tournamentName: t.tournament_name, firstMatch, minutesLeft });
 
@@ -171,16 +187,16 @@ async function runCutoffReminders() {
     // Standalone matches belong to a specific planilla (matches.planilla_id).
     // Without that link we have no way to know which user(s) to notify, so we
     // skip matches with planilla_id IS NULL.
-    const standaloneRes = await db.query(`
-        SELECT id, home_team, away_team, time_cutoff, planilla_id
-        FROM matches
-        WHERE estado = 'scheduled'
-          AND tournament_id IS NULL
-          AND planilla_id IS NOT NULL
-          AND time_cutoff IS NOT NULL
-          AND time_cutoff BETWEEN NOW() + INTERVAL '20 minutes'
-                              AND NOW() + INTERVAL '40 minutes'
-    `);
+    const standaloneRes = await db.query(
+        skipWindow
+            ? `SELECT id, home_team, away_team, time_cutoff, planilla_id
+               FROM matches WHERE estado = 'scheduled' AND tournament_id IS NULL AND planilla_id IS NOT NULL
+               ORDER BY start_time ASC LIMIT 5`
+            : `SELECT id, home_team, away_team, time_cutoff, planilla_id
+               FROM matches WHERE estado = 'scheduled' AND tournament_id IS NULL AND planilla_id IS NOT NULL
+               AND time_cutoff IS NOT NULL
+               AND time_cutoff BETWEEN NOW() + INTERVAL '20 minutes' AND NOW() + INTERVAL '40 minutes'`
+    );
 
     for (const match of standaloneRes.rows) {
         const missingRes = await db.query(`
@@ -247,12 +263,16 @@ async function runCutoffReminders() {
         }
     }
 
-    console.log(`[cutoff-reminder] tournaments_in_window=${tournamentsInWindow} standalone=${standaloneRes.rows.length} notified=${notified} skipped=${skipped}`);
+    console.log(`[cutoff-reminder] tournaments=${tournamentsInWindow} standalone=${standaloneRes.rows.length} notified=${notified} skipped=${skipped} dryRun=${dryRun} skipWindow=${skipWindow}`);
     return {
         tournaments_in_window: tournamentsInWindow,
         standalone_matches: standaloneRes.rows.length,
         users_notified: notified,
         skipped,
+        skip_details: skipDetails,
+        dry_run: dryRun,
+        skip_window: skipWindow,
+        ...(dryRun ? { preview } : {}),
     };
 }
 
