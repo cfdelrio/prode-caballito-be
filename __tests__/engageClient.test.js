@@ -9,6 +9,7 @@ jest.mock('axios', () => ({
 jest.mock('../utils/logger', () => ({
   createLogger: () => ({
     info: jest.fn(),
+    warn: jest.fn(),
     error: jest.fn(),
   }),
 }))
@@ -16,13 +17,13 @@ jest.mock('../utils/logger', () => ({
 const originalEnabled = process.env.ENGAGE_ENABLED
 
 describe('engageClient', () => {
-  let sendEvent, sendEventBatch
+  let sendEvent, sendEventBatch, sendWithRetry
 
   beforeAll(() => {
     process.env.ENGAGE_ENABLED = 'true'
     process.env.ENGAGE_API_URL = 'https://test.engage.com'
     process.env.ENGAGE_API_KEY = 'test-key'
-    ;({ sendEvent, sendEventBatch } = require('../services/engageClient'))
+    ;({ sendEvent, sendEventBatch, sendWithRetry } = require('../services/engageClient'))
   })
 
   afterAll(() => {
@@ -133,6 +134,75 @@ describe('engageClient', () => {
       await expect(
         sendEventBatch([{ type: 'prode.kickoff', userId: '1' }]),
       ).rejects.toThrow('Service unavailable')
+    })
+  })
+
+  describe('sendWithRetry — exponential backoff', () => {
+    // Override setTimeout to avoid real delays in tests
+    beforeAll(() => jest.useFakeTimers())
+    afterAll(() => jest.useRealTimers())
+
+    it('retries on network error and succeeds on 3rd attempt', async () => {
+      const networkErr = new Error('ECONNRESET')
+      let callCount = 0
+      const fn = jest.fn(async () => {
+        callCount++
+        if (callCount < 3) throw networkErr
+        return { eventId: 'success' }
+      })
+
+      // Run with minimal delay so timers advance quickly
+      const promise = sendWithRetry(fn, 3, 1)
+      // Advance timers through the exponential backoffs (1ms, 2ms)
+      await jest.runAllTimersAsync()
+      const result = await promise
+
+      expect(result).toEqual({ eventId: 'success' })
+      expect(fn).toHaveBeenCalledTimes(3)
+    })
+
+    it('does not retry on 4xx client errors (except 409 and 429)', async () => {
+      const clientErr = new Error('Bad Request')
+      clientErr.response = { status: 400 }
+      const fn = jest.fn(async () => { throw clientErr })
+
+      await expect(sendWithRetry(fn, 3, 1)).rejects.toThrow('Bad Request')
+      // Must have thrown immediately without retrying
+      expect(fn).toHaveBeenCalledTimes(1)
+    })
+
+    it('retries on 429 rate limit errors', async () => {
+      const rateLimitErr = new Error('Too Many Requests')
+      rateLimitErr.response = { status: 429 }
+      let callCount = 0
+      const fn = jest.fn(async () => {
+        callCount++
+        if (callCount < 2) throw rateLimitErr
+        return { queued: true }
+      })
+
+      const promise = sendWithRetry(fn, 3, 1)
+      await jest.runAllTimersAsync()
+      const result = await promise
+
+      expect(result).toEqual({ queued: true })
+      expect(fn).toHaveBeenCalledTimes(2)
+    })
+
+    it('throws after exhausting all attempts', async () => {
+      const err = new Error('Service unavailable')
+      err.response = { status: 503 }
+      const fn = jest.fn(async () => { throw err })
+
+      const promise = sendWithRetry(fn, 3, 1)
+      // Attach a no-op .catch() before advancing timers so the rejection that
+      // occurs during timer advancement doesn't become an unhandled rejection.
+      // The original `promise` reference still rejects — we assert on it below.
+      promise.catch(() => {})
+      await jest.runAllTimersAsync()
+
+      await expect(promise).rejects.toThrow('Service unavailable')
+      expect(fn).toHaveBeenCalledTimes(3)
     })
   })
 })

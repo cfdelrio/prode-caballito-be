@@ -1,5 +1,6 @@
 "use strict";
 const { Router } = require("express");
+const rateLimit = require("express-rate-limit");
 const { authMiddleware, requireAdmin } = require("../middleware/auth");
 const { adminTestWhatsappValidation, adminWeeklyEmailValidation, adminWinnerImageValidation, adminRecalcMatchdayValidation, adminSendWelcomeValidation, adminTriggerWinnerValidation } = require("../middleware/validation");
 const { sendWhatsApp } = require("../services/whatsapp");
@@ -13,6 +14,16 @@ const { sendEventBatch } = require("../services/engageClient");
 const { buildEngageMetadata } = require("../utils/engageHelpers");
 
 const router = Router();
+
+// Rate limiter para endpoints que disparan campañas de voz y emails masivos.
+// Máximo 5 disparos por minuto por IP de admin — previene abuso con token comprometido.
+const adminCampaignLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many admin campaign triggers, please slow down' },
+});
 
 router.post('/test-sms', authMiddleware, requireAdmin, async (req, res) => {
     try {
@@ -251,7 +262,7 @@ async function sendWeeklyEmailBatch(testEmail = null) {
 
 // POST /api/admin/weekly-email
 // Body opcional: { test_email: "..." } → envía solo a ese email (preview)
-router.post('/weekly-email', authMiddleware, requireAdmin, adminWeeklyEmailValidation, async (req, res) => {
+router.post('/weekly-email', authMiddleware, requireAdmin, adminCampaignLimiter, adminWeeklyEmailValidation, async (req, res) => {
     try {
         const testEmail = req.body.test_email || null;
         console.log(`[weekly-email] Starting batch${testEmail ? ` (test: ${testEmail})` : ''}`);
@@ -268,7 +279,7 @@ router.post('/weekly-email', authMiddleware, requireAdmin, adminWeeklyEmailValid
 // Body opcional:
 //   - user_ids: string[]  → restringe a esos UUIDs (testing)
 //   - dry_run: boolean    → no inserta reminder_sent ni publica a Engage; devuelve preview
-router.post('/voice-5day-trigger', authMiddleware, requireAdmin, async (req, res) => {
+router.post('/voice-5day-trigger', authMiddleware, requireAdmin, adminCampaignLimiter, async (req, res) => {
     try {
         const { user_ids: userIds, dry_run: dryRun } = req.body || {};
         if (userIds && !Array.isArray(userIds)) {
@@ -502,7 +513,7 @@ router.post('/jobs/backfill-scheduled-jobs', authMiddleware, requireAdmin, async
 
 // Voice match reminder — disparo manual.
 // Body: { user_ids?: uuid[], dry_run?: boolean (default true), skip_window?: boolean (testing only) }
-router.post('/voice-match-reminder-trigger', authMiddleware, requireAdmin, async (req, res) => {
+router.post('/voice-match-reminder-trigger', authMiddleware, requireAdmin, adminCampaignLimiter, async (req, res) => {
     try {
         const { user_ids, dry_run = true, skip_window = false } = req.body;
         const userIds = Array.isArray(user_ids)
@@ -518,7 +529,7 @@ router.post('/voice-match-reminder-trigger', authMiddleware, requireAdmin, async
 });
 
 // Voice survey campeón del mundial
-router.post('/voice-campeon-survey', authMiddleware, requireAdmin, async (req, res) => {
+router.post('/voice-campeon-survey', authMiddleware, requireAdmin, adminCampaignLimiter, async (req, res) => {
     try {
         const { user_ids, dry_run = true, options } = req.body;
         if (!dry_run && process.env.ENGAGE_ENABLED !== 'true') {
@@ -682,6 +693,37 @@ router.get('/engage-verify/recent', authMiddleware, requireAdmin, async (req, re
         res.json({ success: true, data: result.rows, count: result.rows.length });
     } catch (error) {
         console.error('[admin/engage-verify/recent]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// DELETE /api/admin/reset-reminder-sent — reset idempotency counters for testing
+router.delete('/reset-reminder-sent', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { reminder_type } = req.query;
+        const validTypes = ['voice_match_reminder', 'voice_5day_reminder', 'cutoff_30min', 'voice_campeon_survey'];
+
+        if (reminder_type && !validTypes.includes(reminder_type)) {
+            return res.status(400).json({
+                success: false,
+                error: `Tipo inválido. Válidos: ${validTypes.join(', ')}`,
+            });
+        }
+
+        const result = reminder_type
+            ? await db.query('DELETE FROM reminder_sent WHERE reminder_type = $1 RETURNING *', [reminder_type])
+            : await db.query('DELETE FROM reminder_sent RETURNING *');
+
+        console.log(`[admin/reset-reminder-sent] Deleted ${result.rowCount} rows (type=${reminder_type || 'ALL'})`);
+        res.json({
+            success: true,
+            data: {
+                deleted: result.rowCount,
+                reminder_type: reminder_type || 'ALL',
+            },
+        });
+    } catch (error) {
+        console.error('[admin/reset-reminder-sent]', error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 });
