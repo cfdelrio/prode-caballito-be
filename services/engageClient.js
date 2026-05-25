@@ -83,16 +83,19 @@ async function sendEventBatch(payloads) {
 }
 
 async function getEvent(eventId) {
+  if (process.env.ENGAGE_ENABLED !== 'true') return { engage_disabled: true };
   const response = await _client.get(`/v1/events/${eventId}`);
   return response.data;
 }
 
 async function getUserDeliveries(userId) {
+  if (process.env.ENGAGE_ENABLED !== 'true') return { engage_disabled: true, deliveries: [] };
   const response = await _client.get(`/v1/users/${userId}/deliveries`);
   return response.data;
 }
 
 async function getUsers({ limit = 10 } = {}) {
+  if (process.env.ENGAGE_ENABLED !== 'true') return { engage_disabled: true, users: [] };
   const response = await _client.get(`/v1/users`, { params: { limit } });
   return response.data;
 }
