@@ -650,9 +650,9 @@ router.get('/engage-verify/event/:eventId', authMiddleware, requireAdmin, async 
         const event = await getEvent(req.params.eventId);
         res.json({ success: true, data: event });
     } catch (error) {
-        const status = error.response?.status || 500;
+        const status = error.response?.status ?? 500;
         console.error(`[admin/engage-verify/event] ${req.params.eventId}:`, error.message);
-        res.status(status === 404 ? 404 : 500).json({ success: false, error: error.message });
+        res.status(status).json({ success: false, error: error.message });
     }
 });
 
@@ -662,9 +662,9 @@ router.get('/engage-verify/user/:externalId', authMiddleware, requireAdmin, asyn
         const deliveries = await getUserDeliveries(req.params.externalId);
         res.json({ success: true, data: deliveries });
     } catch (error) {
-        const status = error.response?.status || 500;
+        const status = error.response?.status ?? 500;
         console.error(`[admin/engage-verify/user] ${req.params.externalId}:`, error.message);
-        res.status(status === 404 ? 404 : 500).json({ success: false, error: error.message });
+        res.status(status).json({ success: false, error: error.message });
     }
 });
 

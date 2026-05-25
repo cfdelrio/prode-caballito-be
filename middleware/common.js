@@ -17,7 +17,7 @@ exports.securityMiddleware = (0, helmet_1.default)({
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
             imgSrc: ["'self'", "data:", "https:", "blob:"],
             scriptSrc: ["'self'"],
-            connectSrc: ["'self'", config_1.config.app.apiUrl],
+            connectSrc: ["'self'", "https://t49euho172.execute-api.us-east-1.amazonaws.com", "https://*.prodecaballito.com"],
         },
     },
     crossOriginEmbedderPolicy: false,
