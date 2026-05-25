@@ -2,7 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendRankingUpdateEmail = exports.sendVerificationCode = exports.sendWelcomeEmail = exports.sendEmail = void 0;
 const { db } = require('../db/connection');
-const RESEND_API_KEY = process.env.RESEND_API_KEY || 're_m3NekW1Y_23CkRZqbVhH24yuU4C6XuNYe';
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+if (!RESEND_API_KEY) throw new Error('RESEND_API_KEY env var is required');
 const FROM_EMAIL = 'noreply@prodecaballito.com';
 const sendEmail = async ({ to, subject, html }) => {
     const res = await fetch('https://api.resend.com/emails', {

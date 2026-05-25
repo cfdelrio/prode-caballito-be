@@ -1,11 +1,44 @@
 'use strict';
 
 const express = require('express');
+const twilio  = require('twilio');
 const router  = express.Router();
 const { db }  = require('../db/connection');
 const { authMiddleware, requireAdmin } = require('../middleware/auth');
 
 const API_BASE = process.env.API_URL || 'https://t49euho172.execute-api.us-east-1.amazonaws.com/prod/api';
+
+// ─── Twilio signature validation middleware ────────────────────────────────────
+
+/**
+ * Validates the X-Twilio-Signature header on incoming Twilio webhook POSTs.
+ * Must run AFTER express.urlencoded() has parsed req.body.
+ * Returns 403 on invalid/missing signature, 500 if TWILIO_AUTH_TOKEN is not set.
+ */
+function validateTwilioSignature(req, res, next) {
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (!authToken) {
+    console.error('[voice] TWILIO_AUTH_TOKEN not set — cannot validate webhook signature');
+    return res.status(500).json({ error: 'Server configuration error' });
+  }
+
+  const signature = req.headers['x-twilio-signature'];
+  if (!signature) {
+    console.warn('[voice] Missing X-Twilio-Signature from', req.ip);
+    return res.status(403).json({ error: 'Missing Twilio signature' });
+  }
+
+  // Full URL Twilio used to POST — must match exactly what Twilio was configured with.
+  const url = `${process.env.API_URL || 'https://api.prodecaballito.com'}${req.originalUrl}`;
+  const params = req.body || {};
+
+  const isValid = twilio.validateRequest(authToken, signature, url, params);
+  if (!isValid) {
+    console.error('[voice] Invalid Twilio signature for', req.originalUrl, 'from', req.ip);
+    return res.status(403).json({ error: 'Invalid Twilio signature' });
+  }
+  next();
+}
 
 // ─── Inbound 0800 ─────────────────────────────────────────────────────────────
 
@@ -35,7 +68,7 @@ function buildWelcomeTwiml() {
 }
 
 // POST /api/voice — punto de entrada para llamadas entrantes del 0800
-router.post('/', (req, res) => {
+router.post('/', validateTwilioSignature, (req, res) => {
   const { CallSid, From } = req.body || {};
   console.log(`[voice-inbound] CallSid=${CallSid} from=${From || 'unknown'}`);
   res.type('text/xml');
@@ -49,7 +82,7 @@ router.get('/', (_req, res) => {
 });
 
 // POST /api/voice/menu — maneja la opción elegida por el usuario
-router.post('/menu', (req, res) => {
+router.post('/menu', validateTwilioSignature, (req, res) => {
   const { Digits, CallSid, From } = req.body || {};
   console.log(`[voice-menu] CallSid=${CallSid} from=${From || 'unknown'} digit=${Digits}`);
 
@@ -78,7 +111,7 @@ router.post('/menu', (req, res) => {
 
 // POST /api/voice/twiml
 // Called by Twilio when the user answers — returns TwiML that plays the survey
-router.post('/twiml', (req, res) => {
+router.post('/twiml', validateTwilioSignature, (req, res) => {
     const { surveyId, question, options: optionsRaw } = req.query;
     let options = [];
     try { options = JSON.parse(optionsRaw); } catch { /* malformed options — proceed with empty */ }
@@ -104,7 +137,7 @@ router.get('/twiml', (_req, res) => {
 
 // POST /api/voice/response
 // Called by Twilio after the user presses a digit
-router.post('/response', async (req, res) => {
+router.post('/response', validateTwilioSignature, async (req, res) => {
     const { surveyId } = req.query;
     const { Digits, CallSid, From } = req.body;
 
@@ -132,7 +165,7 @@ router.post('/response', async (req, res) => {
 
 // POST /api/voice/status
 // Twilio status callback — tracks call outcome (completed, no-answer, busy, failed)
-router.post('/status', async (req, res) => {
+router.post('/status', validateTwilioSignature, async (req, res) => {
     const { CallSid, CallStatus, To } = req.body;
     try {
         await db.query(
