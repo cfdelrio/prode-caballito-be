@@ -1,5 +1,6 @@
 "use strict";
 const { Router } = require("express");
+const rateLimit = require("express-rate-limit");
 const { authMiddleware, requireAdmin } = require("../middleware/auth");
 const { adminTestWhatsappValidation, adminWeeklyEmailValidation, adminWinnerImageValidation, adminRecalcMatchdayValidation, adminSendWelcomeValidation, adminTriggerWinnerValidation } = require("../middleware/validation");
 const { sendWhatsApp } = require("../services/whatsapp");
@@ -13,6 +14,16 @@ const { sendEventBatch } = require("../services/engageClient");
 const { buildEngageMetadata } = require("../utils/engageHelpers");
 
 const router = Router();
+
+// Rate limiter para endpoints que disparan campañas de voz y emails masivos.
+// Máximo 5 disparos por minuto por IP de admin — previene abuso con token comprometido.
+const adminCampaignLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many admin campaign triggers, please slow down' },
+});
 
 router.post('/test-sms', authMiddleware, requireAdmin, async (req, res) => {
     try {
@@ -251,7 +262,7 @@ async function sendWeeklyEmailBatch(testEmail = null) {
 
 // POST /api/admin/weekly-email
 // Body opcional: { test_email: "..." } → envía solo a ese email (preview)
-router.post('/weekly-email', authMiddleware, requireAdmin, adminWeeklyEmailValidation, async (req, res) => {
+router.post('/weekly-email', authMiddleware, requireAdmin, adminCampaignLimiter, adminWeeklyEmailValidation, async (req, res) => {
     try {
         const testEmail = req.body.test_email || null;
         console.log(`[weekly-email] Starting batch${testEmail ? ` (test: ${testEmail})` : ''}`);
@@ -268,7 +279,7 @@ router.post('/weekly-email', authMiddleware, requireAdmin, adminWeeklyEmailValid
 // Body opcional:
 //   - user_ids: string[]  → restringe a esos UUIDs (testing)
 //   - dry_run: boolean    → no inserta reminder_sent ni publica a Engage; devuelve preview
-router.post('/voice-5day-trigger', authMiddleware, requireAdmin, async (req, res) => {
+router.post('/voice-5day-trigger', authMiddleware, requireAdmin, adminCampaignLimiter, async (req, res) => {
     try {
         const { user_ids: userIds, dry_run: dryRun } = req.body || {};
         if (userIds && !Array.isArray(userIds)) {
@@ -502,7 +513,7 @@ router.post('/jobs/backfill-scheduled-jobs', authMiddleware, requireAdmin, async
 
 // Voice match reminder — disparo manual.
 // Body: { user_ids?: uuid[], dry_run?: boolean (default true), skip_window?: boolean (testing only) }
-router.post('/voice-match-reminder-trigger', authMiddleware, requireAdmin, async (req, res) => {
+router.post('/voice-match-reminder-trigger', authMiddleware, requireAdmin, adminCampaignLimiter, async (req, res) => {
     try {
         const { user_ids, dry_run = true, skip_window = false } = req.body;
         const userIds = Array.isArray(user_ids)
@@ -518,7 +529,7 @@ router.post('/voice-match-reminder-trigger', authMiddleware, requireAdmin, async
 });
 
 // Voice survey campeón del mundial
-router.post('/voice-campeon-survey', authMiddleware, requireAdmin, async (req, res) => {
+router.post('/voice-campeon-survey', authMiddleware, requireAdmin, adminCampaignLimiter, async (req, res) => {
     try {
         const { user_ids, dry_run = true, options } = req.body;
         if (!dry_run && process.env.ENGAGE_ENABLED !== 'true') {
@@ -650,9 +661,9 @@ router.get('/engage-verify/event/:eventId', authMiddleware, requireAdmin, async 
         const event = await getEvent(req.params.eventId);
         res.json({ success: true, data: event });
     } catch (error) {
-        const status = error.response?.status || 500;
+        const status = error.response?.status ?? 500;
         console.error(`[admin/engage-verify/event] ${req.params.eventId}:`, error.message);
-        res.status(status === 404 ? 404 : 500).json({ success: false, error: error.message });
+        res.status(status).json({ success: false, error: error.message });
     }
 });
 
@@ -662,9 +673,9 @@ router.get('/engage-verify/user/:externalId', authMiddleware, requireAdmin, asyn
         const deliveries = await getUserDeliveries(req.params.externalId);
         res.json({ success: true, data: deliveries });
     } catch (error) {
-        const status = error.response?.status || 500;
+        const status = error.response?.status ?? 500;
         console.error(`[admin/engage-verify/user] ${req.params.externalId}:`, error.message);
-        res.status(status === 404 ? 404 : 500).json({ success: false, error: error.message });
+        res.status(status).json({ success: false, error: error.message });
     }
 });
 
