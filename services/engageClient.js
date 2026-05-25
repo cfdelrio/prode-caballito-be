@@ -47,4 +47,19 @@ async function sendEventBatch(payloads) {
   }
 }
 
-module.exports = { sendEvent, sendEventBatch };
+async function getEvent(eventId) {
+  const response = await _client.get(`/v1/events/${eventId}`);
+  return response.data;
+}
+
+async function getUserDeliveries(userId) {
+  const response = await _client.get(`/v1/users/${userId}/deliveries`);
+  return response.data;
+}
+
+async function getUsers({ limit = 10 } = {}) {
+  const response = await _client.get(`/v1/users`, { params: { limit } });
+  return response.data;
+}
+
+module.exports = { sendEvent, sendEventBatch, getEvent, getUserDeliveries, getUsers };

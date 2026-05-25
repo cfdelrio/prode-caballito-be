@@ -612,5 +612,61 @@ router.get('/voice-campaigns/live', authMiddleware, requireAdmin, async (req, re
     }
 });
 
+// Engage verification: check event status + deliveries from Engage API
+// GET  /api/admin/engage-verify/event/:eventId
+// GET  /api/admin/engage-verify/user/:externalId
+// GET  /api/admin/engage-verify/status
+router.get('/engage-verify/status', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { getUsers } = require('../services/engageClient');
+        const enabled = process.env.ENGAGE_ENABLED === 'true';
+        const hasUrl = !!process.env.ENGAGE_API_URL;
+        const hasKey = !!process.env.ENGAGE_API_KEY;
+
+        if (!enabled || !hasUrl) {
+            return res.json({ success: true, data: { engage_enabled: enabled, api_url_configured: hasUrl, api_key_configured: hasKey, users: null } });
+        }
+
+        const usersData = await getUsers({ limit: 5 }).catch(err => ({ error: err.message }));
+        res.json({
+            success: true,
+            data: {
+                engage_enabled: enabled,
+                api_url_configured: hasUrl,
+                api_key_configured: hasKey,
+                api_url: process.env.ENGAGE_API_URL,
+                users: usersData,
+            },
+        });
+    } catch (error) {
+        console.error('[admin/engage-verify/status]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.get('/engage-verify/event/:eventId', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { getEvent } = require('../services/engageClient');
+        const event = await getEvent(req.params.eventId);
+        res.json({ success: true, data: event });
+    } catch (error) {
+        const status = error.response?.status || 500;
+        console.error(`[admin/engage-verify/event] ${req.params.eventId}:`, error.message);
+        res.status(status === 404 ? 404 : 500).json({ success: false, error: error.message });
+    }
+});
+
+router.get('/engage-verify/user/:externalId', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const { getUserDeliveries } = require('../services/engageClient');
+        const deliveries = await getUserDeliveries(req.params.externalId);
+        res.json({ success: true, data: deliveries });
+    } catch (error) {
+        const status = error.response?.status || 500;
+        console.error(`[admin/engage-verify/user] ${req.params.externalId}:`, error.message);
+        res.status(status === 404 ? 404 : 500).json({ success: false, error: error.message });
+    }
+});
+
 module.exports = router;
 module.exports.sendWeeklyEmailBatch = sendWeeklyEmailBatch;
