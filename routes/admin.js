@@ -668,5 +668,23 @@ router.get('/engage-verify/user/:externalId', authMiddleware, requireAdmin, asyn
     }
 });
 
+// GET /api/admin/engage-verify/recent — last N notifications sent by PC (local DB, no Engage call)
+router.get('/engage-verify/recent', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const limit = Math.min(parseInt(req.query.limit) || 30, 100);
+        const result = await db.query(`
+            SELECT n.id, n.user_id, u.nombre, u.email, n.type, n.sent_at, n.status
+            FROM notifications n
+            JOIN users u ON u.id = n.user_id
+            ORDER BY n.sent_at DESC
+            LIMIT $1
+        `, [limit]);
+        res.json({ success: true, data: result.rows, count: result.rows.length });
+    } catch (error) {
+        console.error('[admin/engage-verify/recent]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 module.exports = router;
 module.exports.sendWeeklyEmailBatch = sendWeeklyEmailBatch;
