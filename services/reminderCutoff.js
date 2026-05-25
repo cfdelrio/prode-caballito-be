@@ -4,6 +4,7 @@ const { db } = require('../db/connection');
 const { pushToUser } = require('./push');
 const { sendSMSWithRetry } = require('./sms');
 const { sendEvent } = require('./engageClient');
+const { buildEngageMetadata } = require('../utils/engageHelpers');
 
 const REMINDER_TYPE = 'cutoff_30min';
 const DEFAULT_CUTOFF_MINUTES = 5; // minutes before first match that bets lock
@@ -90,9 +91,9 @@ async function runCutoffReminders() {
         // Users with a planilla in this tournament who have at least one missing bet.
         // Joins users so we get whatsapp info in one round-trip (avoids N+1).
         const missingRes = await db.query(`
-            SELECT p.user_id,
-                   u.whatsapp_number,
-                   u.whatsapp_consent,
+            SELECT p.user_id, p.id AS planilla_id, p.nombre_planilla,
+                   u.nombre, u.email, u.whatsapp_number, u.whatsapp_consent,
+                   u.tema_equipo, u.foto_url, u.created_at, u.rol, u.idioma_pref,
                    COUNT(*) FILTER (WHERE b.id IS NULL) AS missing_count
             FROM planilla_tournaments pt
             JOIN planillas p ON p.id = pt.planilla_id
@@ -100,7 +101,9 @@ async function runCutoffReminders() {
             JOIN matches m ON m.tournament_id = pt.tournament_id AND m.estado = 'scheduled'
             LEFT JOIN bets b ON b.planilla_id = p.id AND b.match_id = m.id
             WHERE pt.tournament_id = $1
-            GROUP BY p.user_id, u.whatsapp_number, u.whatsapp_consent
+            GROUP BY p.user_id, p.id, p.nombre_planilla,
+                     u.nombre, u.email, u.whatsapp_number, u.whatsapp_consent,
+                     u.tema_equipo, u.foto_url, u.created_at, u.rol, u.idioma_pref
             HAVING COUNT(*) FILTER (WHERE b.id IS NULL) > 0
         `, [t.tournament_id]);
 
@@ -136,13 +139,11 @@ async function runCutoffReminders() {
                             first_match: { local: t.first_home, away: t.first_away },
                         },
                     },
-                    metadata: {
-                        user_contact: {
-                            phone: row.whatsapp_number,
-                            whatsapp_consent: row.whatsapp_consent,
-                            idioma_pref: 'es-AR',
-                        },
-                    },
+                    metadata: buildEngageMetadata(row, {
+                        planilla_nombre: row.nombre_planilla,
+                        planilla_id: row.planilla_id,
+                        tournament_name: t.tournament_name,
+                    }),
                 }).catch(err => console.error(`[cutoff-reminder] engage failed user=${row.user_id}:`, err.message));
             } else if (row.whatsapp_number && row.whatsapp_consent) {
                 const smsBody = pending === 1
@@ -183,9 +184,9 @@ async function runCutoffReminders() {
 
     for (const match of standaloneRes.rows) {
         const missingRes = await db.query(`
-            SELECT p.user_id,
-                   u.whatsapp_number,
-                   u.whatsapp_consent
+            SELECT p.user_id, p.id AS planilla_id, p.nombre_planilla,
+                   u.nombre, u.email, u.whatsapp_number, u.whatsapp_consent,
+                   u.tema_equipo, u.foto_url, u.created_at, u.rol, u.idioma_pref
             FROM planillas p
             JOIN users u ON u.id = p.user_id
             LEFT JOIN bets b ON b.planilla_id = p.id AND b.match_id = $1
@@ -222,13 +223,10 @@ async function runCutoffReminders() {
                             first_match: { local: match.home_team, away: match.away_team },
                         },
                     },
-                    metadata: {
-                        user_contact: {
-                            phone: row.whatsapp_number,
-                            whatsapp_consent: row.whatsapp_consent,
-                            idioma_pref: 'es-AR',
-                        },
-                    },
+                    metadata: buildEngageMetadata(row, {
+                        planilla_nombre: row.nombre_planilla,
+                        planilla_id: row.planilla_id,
+                    }),
                 }).catch(err => console.error(`[cutoff-reminder] engage failed user=${row.user_id}:`, err.message));
             } else if (row.whatsapp_number && row.whatsapp_consent) {
                 const smsBody = `⏰ ${match.home_team} vs ${match.away_team} cierra en ${minutesLeft} min — aún no pronosticaste 👉 prodecaballito.com/apuestas`;

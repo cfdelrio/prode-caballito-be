@@ -2,9 +2,15 @@
 
 const { db } = require('../db/connection');
 const { sendEventBatch } = require('./engageClient');
+const { buildEngageMetadata } = require('../utils/engageHelpers');
 
 const REMINDER_TYPE = 'voice_5days';
 const TEMPLATE_NAME = 'Onboarding Workcup 2026';
+
+const SKIP_REASONS = {
+    NO_PHONE: 'no_phone',
+    ALREADY_SENT: 'already_sent',
+};
 
 /**
  * Daily job: find tournaments whose first match starts in ~5 days,
@@ -48,11 +54,10 @@ async function runVoice5dayReminders({ userIds = null, dryRun = false } = {}) {
 
     let notified = 0;
     let skipped = 0;
+    const skipDetails = [];
     const preview = [];
 
     for (const t of tournamentsRes.rows) {
-        // Users with a planilla in this tournament + at least one pending bet
-        // + a phone number on file (Engage filters by consent on its side).
         const params = [t.tournament_id];
         let userFilter = '';
         if (userIds && userIds.length > 0) {
@@ -62,20 +67,29 @@ async function runVoice5dayReminders({ userIds = null, dryRun = false } = {}) {
         const usersRes = await db.query(`
             SELECT u.id AS user_id, u.nombre, u.email,
                    u.whatsapp_number, u.whatsapp_consent,
+                   u.tema_equipo, u.foto_url, u.created_at, u.rol, u.idioma_pref,
+                   p.id AS planilla_id, p.nombre_planilla,
                    COUNT(m2.id) FILTER (WHERE b.id IS NULL) AS pending_count
             FROM planillas p
             JOIN users u ON u.id = p.user_id
             JOIN matches m2 ON m2.tournament_id = $1 AND m2.estado = 'scheduled'
             LEFT JOIN bets b ON b.planilla_id = p.id AND b.match_id = m2.id
             WHERE p.tournament_id = $1
-              AND u.whatsapp_number IS NOT NULL
               ${userFilter}
-            GROUP BY u.id, u.nombre, u.email, u.whatsapp_number, u.whatsapp_consent
+            GROUP BY u.id, u.nombre, u.email, u.whatsapp_number, u.whatsapp_consent,
+                     u.tema_equipo, u.foto_url, u.created_at, u.rol, u.idioma_pref,
+                     p.id, p.nombre_planilla
             HAVING COUNT(m2.id) FILTER (WHERE b.id IS NULL) > 0
         `, params);
 
         const events = [];
         for (const u of usersRes.rows) {
+            if (!u.whatsapp_number) {
+                skipped++;
+                skipDetails.push({ user_id: u.user_id, nombre: u.nombre, reason: SKIP_REASONS.NO_PHONE });
+                continue;
+            }
+
             if (!dryRun) {
                 const insertRes = await db.query(
                     `INSERT INTO reminder_sent (user_id, match_id, reminder_type)
@@ -85,10 +99,14 @@ async function runVoice5dayReminders({ userIds = null, dryRun = false } = {}) {
                     [u.user_id, t.first_match_id, REMINDER_TYPE]
                 ).catch(() => ({ rows: [] }));
 
-                if (insertRes.rows.length === 0) { skipped++; continue; }
+                if (insertRes.rows.length === 0) {
+                    skipped++;
+                    skipDetails.push({ user_id: u.user_id, nombre: u.nombre, reason: SKIP_REASONS.ALREADY_SENT });
+                    continue;
+                }
             }
 
-            const event = {
+            events.push({
                 type: 'prode.voice_survey',
                 userId: String(u.user_id),
                 idempotencyKey: `voice_5days:${u.user_id}:${t.first_match_id}`,
@@ -100,17 +118,12 @@ async function runVoice5dayReminders({ userIds = null, dryRun = false } = {}) {
                         days_left: 5,
                     },
                 },
-                metadata: {
-                    user_contact: {
-                        nombre: u.nombre,
-                        email: u.email,
-                        phone: u.whatsapp_number,
-                        whatsapp_consent: u.whatsapp_consent,
-                        idioma_pref: 'es-AR',
-                    },
-                },
-            };
-            events.push(event);
+                metadata: buildEngageMetadata(u, {
+                    planilla_nombre: u.nombre_planilla,
+                    planilla_id: u.planilla_id,
+                    tournament_name: t.tournament_name,
+                }),
+            });
             if (dryRun) preview.push({ tournament: t.tournament_name, user: u.nombre, phone: u.whatsapp_number, pending: parseInt(u.pending_count) });
             notified++;
         }
@@ -127,6 +140,7 @@ async function runVoice5dayReminders({ userIds = null, dryRun = false } = {}) {
         tournaments_in_window: tournamentsRes.rows.length,
         users_notified: notified,
         skipped,
+        skip_details: skipDetails,
         dry_run: dryRun,
         ...(dryRun ? { preview } : {}),
     };
