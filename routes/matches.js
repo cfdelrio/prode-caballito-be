@@ -427,56 +427,56 @@ async function actualizarRanking(matchId = null) {
     for (const row of newResult.rows) {
         const prev = prevRanking.get(row.planilla_id);
         const prevPos = prev?.position || null;
-        if (prevPos !== row.position) {
-            try {
-                if (process.env.ENGAGE_ENABLED === 'true') {
-                    await sendEvent({
-                        type: prevPos == null ? 'prode.ranking_change.entered'
-                            : row.position < prevPos ? 'prode.ranking_change.up'
-                            : 'prode.ranking_change.down',
-                        userId: String(row.user_id),
-                        idempotencyKey: `ranking_change:${row.user_id}:${matchId || 'recalc'}`,
-                        payload: {
-                            business_context: {
-                                old_rank: prevPos,
-                                new_rank: row.position,
-                                delta: prevPos != null ? Math.abs(prevPos - row.position) : null,
-                                puntos_totales: row.puntos_totales,
-                                planilla_nombre: row.nombre_planilla,
-                            },
+        // Engage recibe siempre el estado del ranking — Engage decide si notificar.
+        // El email fallback solo se manda cuando la posición realmente cambió.
+        try {
+            if (process.env.ENGAGE_ENABLED === 'true') {
+                await sendEvent({
+                    type: prevPos == null ? 'prode.ranking_change.entered'
+                        : row.position < prevPos ? 'prode.ranking_change.up'
+                        : 'prode.ranking_change.down',
+                    userId: String(row.user_id),
+                    idempotencyKey: `ranking_change:${row.user_id}:${matchId || 'recalc'}`,
+                    payload: {
+                        business_context: {
+                            old_rank: prevPos,
+                            new_rank: row.position,
+                            delta: prevPos != null ? Math.abs(prevPos - row.position) : null,
+                            puntos_totales: row.puntos_totales,
+                            planilla_nombre: row.nombre_planilla,
                         },
-                        metadata: {
-                            user_contact: {
-                                nombre: row.nombre,
-                                email: row.email,
-                                phone: row.whatsapp_number,
-                                whatsapp_consent: row.whatsapp_consent,
-                                idioma_pref: 'es-AR',
-                            },
+                    },
+                    metadata: {
+                        user_contact: {
+                            nombre: row.nombre,
+                            email: row.email,
+                            phone: row.whatsapp_number,
+                            whatsapp_consent: row.whatsapp_consent,
+                            idioma_pref: 'es-AR',
                         },
-                    });
-                    console.log(`[engage] ranking_change queued for ${row.email} (position: ${row.position})`);
-                } else {
-                    await sendRankingUpdateEmail(row.email, row.nombre, row.position, prevPos, row.puntos_totales);
-                    console.log(`📧 Email sent to ${row.email} (position: ${row.position})`);
-                }
-            }
-            catch (err) {
-                console.error(`Failed to send ranking update for ${row.email}:`, err);
-            }
-            // In-app notification (only when the user is on the ranked board, i.e. position != null)
-            if (row.position != null) {
-                const payload = buildRankingChangePayload({
-                    prevPos,
-                    newPos: row.position,
-                    planillaNombre: row.nombre_planilla,
+                    },
                 });
-                await connection_1.db.query(
-                    `INSERT INTO notifications (user_id, type, payload, status, sent_at)
-                     VALUES ($1, 'ranking_change', $2, 'sent', NOW())`,
-                    [row.user_id, JSON.stringify(payload)]
-                ).catch(err => console.error(`[ranking-notif] insert failed user=${row.user_id}:`, err.message));
+                console.log(`[engage] ranking_change queued for ${row.email} (position: ${row.position})`);
+            } else if (prevPos !== row.position) {
+                await sendRankingUpdateEmail(row.email, row.nombre, row.position, prevPos, row.puntos_totales);
+                console.log(`📧 Email sent to ${row.email} (position: ${row.position})`);
             }
+        }
+        catch (err) {
+            console.error(`Failed to send ranking update for ${row.email}:`, err);
+        }
+        // In-app notification solo cuando la posición cambió y el usuario está en el ranking
+        if (prevPos !== row.position && row.position != null) {
+            const payload = buildRankingChangePayload({
+                prevPos,
+                newPos: row.position,
+                planillaNombre: row.nombre_planilla,
+            });
+            await connection_1.db.query(
+                `INSERT INTO notifications (user_id, type, payload, status, sent_at)
+                 VALUES ($1, 'ranking_change', $2, 'sent', NOW())`,
+                [row.user_id, JSON.stringify(payload)]
+            ).catch(err => console.error(`[ranking-notif] insert failed user=${row.user_id}:`, err.message));
         }
 
         // "Te pasaron en el ranking" — position worsened and we can identify who took the spot
@@ -524,11 +524,32 @@ async function actualizarRanking(matchId = null) {
             }
         }
 
-        // "Cerca del podio" — outside top 3, within 5 pts of #3
-        // Only when triggered from a real result publication (matchId != null) for idempotency
-        if (matchId && row.position != null && row.position > 3 && podio3) {
+        // "Cerca del podio" — Engage recibe siempre con el gap; Engage aplica sus propias reglas.
+        // El fallback local solo notifica cuando gap <= 5 (no hay Engage que filtre).
+        if (matchId && row.position != null && podio3) {
             const gap = podio3.puntos_totales - row.puntos_totales;
-            if (gap >= 0 && gap <= 5) {
+            if (process.env.ENGAGE_ENABLED === 'true') {
+                sendEvent({
+                    type: 'prode.near_podio',
+                    userId: String(row.user_id),
+                    idempotencyKey: `near_podio:${row.user_id}:${matchId}`,
+                    payload: {
+                        business_context: {
+                            gap,
+                            podio3_nombre: podio3.nombre,
+                            planilla_nombre: row.nombre_planilla,
+                            position: row.position,
+                        },
+                    },
+                    metadata: {
+                        user_contact: {
+                            phone: row.whatsapp_number,
+                            whatsapp_consent: row.whatsapp_consent,
+                            idioma_pref: 'es-AR',
+                        },
+                    },
+                }).catch(err => console.error(`[near-podio] engage failed user=${row.user_id}:`, err.message));
+            } else if (row.position > 3 && gap >= 0 && gap <= 5) {
                 const inserted = await connection_1.db.query(
                     `INSERT INTO reminder_sent (user_id, match_id, reminder_type)
                      VALUES ($1, $2, 'near_podio')
@@ -545,11 +566,7 @@ async function actualizarRanking(matchId = null) {
                         : gap <= 3
                         ? `Estás muy cerca del #3. Próxima fecha.`
                         : `A ${gap} pts del #3 en "${row.nombre_planilla}". Tu momento llega.`;
-                    const payload = {
-                        title: nearPodioTitle,
-                        body: nearPodioBody,
-                        icon: 'trophy',
-                    };
+                    const payload = { title: nearPodioTitle, body: nearPodioBody, icon: 'trophy' };
                     pushToUser(row.user_id, { title: payload.title, body: payload.body }).catch(err =>
                         console.error(`[near-podio] push failed user=${row.user_id}:`, err.message)
                     );
@@ -558,28 +575,6 @@ async function actualizarRanking(matchId = null) {
                          VALUES ($1, 'near_podio', $2, 'sent', NOW())`,
                         [row.user_id, JSON.stringify(payload)]
                     ).catch(err => console.error(`[near-podio] insert failed user=${row.user_id}:`, err.message));
-                    if (process.env.ENGAGE_ENABLED === 'true') {
-                        sendEvent({
-                            type: 'prode.near_podio',
-                            userId: String(row.user_id),
-                            idempotencyKey: `near_podio:${row.user_id}:${matchId}`,
-                            payload: {
-                                business_context: {
-                                    gap,
-                                    podio3_nombre: podio3.nombre,
-                                    planilla_nombre: row.nombre_planilla,
-                                    position: row.position,
-                                },
-                            },
-                            metadata: {
-                                user_contact: {
-                                    phone: row.whatsapp_number,
-                                    whatsapp_consent: row.whatsapp_consent,
-                                    idioma_pref: 'es-AR',
-                                },
-                            },
-                        }).catch(err => console.error(`[near-podio] engage failed user=${row.user_id}:`, err.message));
-                    }
                 }
             }
         }

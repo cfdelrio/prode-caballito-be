@@ -529,7 +529,29 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
       [r.planilla_id, matchdayId]
     ).catch(() => ({ rows: [{ max_pts: null }] }));
     const maxPts = histRes.rows[0]?.max_pts ?? null;
-    if (maxPts !== null && r.points > parseInt(maxPts)) {
+    // Engage recibe siempre con los puntos actuales y el máximo anterior; Engage decide si es récord.
+    // El fallback local (push/in-app) solo actúa cuando efectivamente hay un récord nuevo.
+    if (process.env.ENGAGE_ENABLED === 'true') {
+      sendEvent({
+        type: 'prode.personal_record',
+        userId: String(r.user_id),
+        idempotencyKey: `personal_record:${r.user_id}:${matchdayId}`,
+        payload: {
+          business_context: {
+            points: r.points,
+            prev_max: maxPts !== null ? parseInt(maxPts) : null,
+            matchday_name: matchday.name,
+          },
+        },
+        metadata: {
+          user_contact: {
+            phone: phoneMap[r.user_id],
+            whatsapp_consent: consentMap[r.user_id],
+            idioma_pref: 'es-AR',
+          },
+        },
+      }).catch(err => console.error(`[matchday-close] engage record failed user=${r.user_id}:`, err.message));
+    } else if (maxPts !== null && r.points > parseInt(maxPts)) {
       const recordPayload = {
         title: '🔥 Nuevo récord personal',
         body: `${r.points} pts en ${matchday.name}. Superaste tu marca anterior (${parseInt(maxPts)} pts).`,
@@ -543,27 +565,6 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
          VALUES ($1, 'personal_record', $2, 'sent', NOW())`,
         [r.user_id, JSON.stringify(recordPayload)]
       ).catch(err => console.error(`[matchday-close] record insert failed user=${r.user_id}:`, err.message));
-      if (process.env.ENGAGE_ENABLED === 'true') {
-        sendEvent({
-          type: 'prode.personal_record',
-          userId: String(r.user_id),
-          idempotencyKey: `personal_record:${r.user_id}:${matchdayId}`,
-          payload: {
-            business_context: {
-              points: r.points,
-              prev_max: parseInt(maxPts),
-              matchday_name: matchday.name,
-            },
-          },
-          metadata: {
-            user_contact: {
-              phone: phoneMap[r.user_id],
-              whatsapp_consent: consentMap[r.user_id],
-              idioma_pref: 'es-AR',
-            },
-          },
-        }).catch(err => console.error(`[matchday-close] engage record failed user=${r.user_id}:`, err.message));
-      }
     }
 
     // ── Streak de exactos ──────────────────────────────────────────────────
@@ -579,7 +580,25 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
       if (sr.puntos_obtenidos >= 3) streak++;
       else break;
     }
-    if (streak > 0 && streak % 3 === 0) {
+    // Engage recibe el streak siempre; Engage decide cuándo notificar (ej. cada 3).
+    // El fallback local solo notifica en múltiplos de 3.
+    if (process.env.ENGAGE_ENABLED === 'true') {
+      sendEvent({
+        type: 'prode.streak_exactos',
+        userId: String(r.user_id),
+        idempotencyKey: `streak_exactos:${r.user_id}:${matchdayId}`,
+        payload: {
+          business_context: { streak, matchday_name: matchday.name },
+        },
+        metadata: {
+          user_contact: {
+            phone: phoneMap[r.user_id],
+            whatsapp_consent: consentMap[r.user_id],
+            idioma_pref: 'es-AR',
+          },
+        },
+      }).catch(err => console.error(`[matchday-close] engage streak failed user=${r.user_id}:`, err.message));
+    } else if (streak > 0 && streak % 3 === 0) {
       const streakTitle = streak >= 9
         ? `🎯 ${streak} exactos seguidos 🔥`
         : streak >= 6
@@ -590,11 +609,7 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
         : streak >= 6
         ? 'Sos el más caliente del PRODE ahora mismo.'
         : 'Nadie te para. Seguís así y el podio es tuyo.';
-      const streakPayload = {
-        title: streakTitle,
-        body: streakBody,
-        icon: 'star',
-      };
+      const streakPayload = { title: streakTitle, body: streakBody, icon: 'star' };
       pushToUser(r.user_id, { title: streakPayload.title, body: streakPayload.body }).catch(err =>
         console.error(`[matchday-close] streak push failed user=${r.user_id}:`, err.message)
       );
@@ -603,23 +618,6 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
          VALUES ($1, 'streak_exactos', $2, 'sent', NOW())`,
         [r.user_id, JSON.stringify(streakPayload)]
       ).catch(err => console.error(`[matchday-close] streak insert failed user=${r.user_id}:`, err.message));
-      if (process.env.ENGAGE_ENABLED === 'true') {
-        sendEvent({
-          type: 'prode.streak_exactos',
-          userId: String(r.user_id),
-          idempotencyKey: `streak_exactos:${r.user_id}:${matchdayId}`,
-          payload: {
-            business_context: { streak, matchday_name: matchday.name },
-          },
-          metadata: {
-            user_contact: {
-              phone: phoneMap[r.user_id],
-              whatsapp_consent: consentMap[r.user_id],
-              idioma_pref: 'es-AR',
-            },
-          },
-        }).catch(err => console.error(`[matchday-close] engage streak failed user=${r.user_id}:`, err.message));
-      }
     }
   }
 }
