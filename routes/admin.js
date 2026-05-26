@@ -12,6 +12,7 @@ const { runConcurrent } = require("../services/concurrency");
 const { runCutoffReminders } = require("../services/reminderCutoff");
 const { sendEventBatch } = require("../services/engageClient");
 const { buildEngageMetadata } = require("../utils/engageHelpers");
+const { invalidatePrefix } = require("../services/cache");
 
 const router = Router();
 
@@ -733,6 +734,42 @@ router.delete('/reset-reminder-sent', authMiddleware, requireAdmin, async (req, 
         });
     } catch (error) {
         console.error('[admin/reset-reminder-sent]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// POST /api/admin/jobs/reset-game — resetea resultados, scores y ranking para re-testing
+router.post('/jobs/reset-game', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        await db.query('BEGIN');
+        await db.query('DELETE FROM scores');
+        await db.query(`
+            UPDATE ranking
+            SET puntos_totales = 0, exactos_count = 0, goles_favor = 0, goles_contra = 0,
+                position = NULL, aciertos_celeste = 0, aciertos_rojo = 0,
+                aciertos_verde = 0, aciertos_amarillo = 0
+        `);
+        await db.query(`
+            UPDATE tournament_rankings
+            SET puntos = 0, total_exactos = 0, total_aciertos = 0, posicion = NULL
+        `);
+        await db.query(`
+            UPDATE matches
+            SET resultado_local = NULL, resultado_visitante = NULL,
+                estado = 'scheduled', finished = false
+            WHERE estado IN ('finished', 'live', 'halftime', 'cancelled')
+        `);
+        await db.query('DELETE FROM reminder_sent');
+        await db.query('COMMIT');
+
+        invalidatePrefix('ranking:');
+        invalidatePrefix('matches:');
+
+        console.log('[jobs/reset-game] Game state reset');
+        res.json({ success: true, message: 'Juego reseteado correctamente' });
+    } catch (error) {
+        await db.query('ROLLBACK').catch(() => {});
+        console.error('[jobs/reset-game]', error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 });
