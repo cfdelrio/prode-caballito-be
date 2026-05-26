@@ -738,11 +738,12 @@ router.delete('/reset-reminder-sent', authMiddleware, requireAdmin, async (req, 
     }
 });
 
-// POST /api/admin/jobs/reset-game — resetea resultados, scores y ranking para re-testing
+// POST /api/admin/jobs/reset-game — resetea resultados, scores, ganadas y ranking para re-testing
 router.post('/jobs/reset-game', authMiddleware, requireAdmin, async (req, res) => {
     try {
         await db.query('BEGIN');
         await db.query('DELETE FROM scores');
+        await db.query('DELETE FROM scores_by_matchday');
         await db.query(`
             UPDATE ranking
             SET puntos_totales = 0, exactos_count = 0, goles_favor = 0, goles_contra = 0,
@@ -759,6 +760,8 @@ router.post('/jobs/reset-game', authMiddleware, requireAdmin, async (req, res) =
                 estado = 'scheduled', finished = false
             WHERE estado IN ('finished', 'live', 'halftime', 'cancelled')
         `);
+        await db.query(`UPDATE matchdays SET winner_announced_at = NULL`);
+        await db.query(`DELETE FROM config WHERE key IN ('ganadores_fechas', 'ganador_fecha')`);
         await db.query('DELETE FROM reminder_sent');
         await db.query('COMMIT');
 
