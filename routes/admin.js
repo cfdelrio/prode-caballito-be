@@ -25,7 +25,16 @@ const adminCampaignLimiter = rateLimit({
     message: { error: 'Too many admin campaign triggers, please slow down' },
 });
 
-router.post('/test-sms', authMiddleware, requireAdmin, async (req, res) => {
+// Rate limiter más estricto para operaciones que envían a toda la base de usuarios.
+const adminBroadcastLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 3,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many broadcast operations, please wait before retrying' },
+});
+
+router.post('/test-sms', authMiddleware, requireAdmin, adminCampaignLimiter, async (req, res) => {
     try {
         const { to, message } = req.body;
         if (!to || !message) {
@@ -39,7 +48,7 @@ router.post('/test-sms', authMiddleware, requireAdmin, async (req, res) => {
     }
 });
 
-router.post('/test-whatsapp', authMiddleware, requireAdmin, adminTestWhatsappValidation, async (req, res) => {
+router.post('/test-whatsapp', authMiddleware, requireAdmin, adminCampaignLimiter, adminTestWhatsappValidation, async (req, res) => {
     try {
         const { to, message } = req.body;
         if (!to || !message) {
@@ -361,7 +370,7 @@ router.post('/jobs/recalc-matchday', authMiddleware, requireAdmin, adminRecalcMa
     }
 });
 
-router.post('/jobs/send-welcome', authMiddleware, requireAdmin, adminSendWelcomeValidation, async (req, res) => {
+router.post('/jobs/send-welcome', authMiddleware, requireAdmin, adminCampaignLimiter, adminSendWelcomeValidation, async (req, res) => {
     try {
         const { email } = req.body;
         if (!email) return res.status(400).json({ success: false, error: 'email requerido' });
@@ -376,7 +385,7 @@ router.post('/jobs/send-welcome', authMiddleware, requireAdmin, adminSendWelcome
     }
 });
 
-router.post('/jobs/trigger-winner', authMiddleware, requireAdmin, adminTriggerWinnerValidation, async (req, res) => {
+router.post('/jobs/trigger-winner', authMiddleware, requireAdmin, adminBroadcastLimiter, adminTriggerWinnerValidation, async (req, res) => {
     try {
         const { email, matchday_id, matchday_name, points } = req.body;
         if (!email) return res.status(400).json({ success: false, error: 'email requerido' });
@@ -457,7 +466,7 @@ router.get('/validate-scores', authMiddleware, requireAdmin, async (req, res) =>
     }
 });
 
-router.post('/jobs/cutoff-reminders', authMiddleware, requireAdmin, async (req, res) => {
+router.post('/jobs/cutoff-reminders', authMiddleware, requireAdmin, adminCampaignLimiter, async (req, res) => {
     try {
         const { dry_run = false, skip_window = false } = req.body || {};
         const result = await runCutoffReminders({ dryRun: dry_run, skipWindow: skip_window });
