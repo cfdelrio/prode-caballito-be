@@ -6,7 +6,7 @@ const { createLogger } = require('../utils/logger');
 const logger = createLogger('engage');
 
 const _client = axios.create({
-  baseURL: process.env.ENGAGE_API_URL || 'https://engage.api.com',
+  baseURL: process.env.ENGAGE_API_URL || 'https://engage.orkestai.ar',
   headers: {
     'x-api-key': process.env.ENGAGE_API_KEY || '',
     'content-type': 'application/json',

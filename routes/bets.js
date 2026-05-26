@@ -228,6 +228,68 @@ router.post('/score', auth_1.authMiddleware, validation_1.betScoreValidation, as
             }
         }
         res.json({ success: true, data: result.rows[0] });
+
+        // Fire-and-forget: si completó todos los pronósticos del torneo, enviar confirmación
+        if (match.tournament_id) {
+            setImmediate(async () => {
+                try {
+                    const missingRes = await connection_1.db.query(
+                        `SELECT COUNT(*) AS missing FROM matches m
+                         LEFT JOIN bets b ON b.match_id = m.id AND b.planilla_id = $1
+                         WHERE m.tournament_id = $2 AND m.estado = 'scheduled' AND b.id IS NULL`,
+                        [planilla_id, match.tournament_id]
+                    );
+                    if (Number(missingRes.rows[0].missing) > 0) return;
+
+                    const firstMatchRes = await connection_1.db.query(
+                        `SELECT id FROM matches WHERE tournament_id = $1 ORDER BY start_time ASC LIMIT 1`,
+                        [match.tournament_id]
+                    );
+                    if (!firstMatchRes.rows.length) return;
+                    const firstMatchId = firstMatchRes.rows[0].id;
+
+                    const idempRes = await connection_1.db.query(
+                        `INSERT INTO reminder_sent (user_id, match_id, reminder_type)
+                         VALUES ($1, $2, 'bet_confirmation')
+                         ON CONFLICT (user_id, match_id, reminder_type) DO NOTHING
+                         RETURNING user_id`,
+                        [req.user.userId, firstMatchId]
+                    );
+                    if (!idempRes.rows.length) return;
+
+                    const infoRes = await connection_1.db.query(
+                        `SELECT u.email, u.nombre, p.nombre_planilla, t.name AS torneo_name
+                         FROM planillas p
+                         JOIN users u ON u.id = p.user_id
+                         JOIN tournaments t ON t.id = $2
+                         WHERE p.id = $1`,
+                        [planilla_id, match.tournament_id]
+                    );
+                    if (!infoRes.rows.length) return;
+                    const { email, nombre, nombre_planilla, torneo_name } = infoRes.rows[0];
+
+                    const matchesRes = await connection_1.db.query(
+                        `SELECT m.id, m.home_team, m.away_team, b.goles_local, b.goles_visitante
+                         FROM matches m
+                         LEFT JOIN bets b ON b.match_id = m.id AND b.planilla_id = $1
+                         WHERE m.tournament_id = $2
+                         ORDER BY m.start_time ASC`,
+                        [planilla_id, match.tournament_id]
+                    );
+
+                    const { sendBetConfirmationEmail } = require('../services/email');
+                    await sendBetConfirmationEmail({
+                        userEmail: email,
+                        userName: nombre,
+                        planillaNombre: nombre_planilla,
+                        torneoName: torneo_name,
+                        matches: matchesRes.rows,
+                    });
+                } catch (err) {
+                    console.error('[bets] bet-confirmation email error:', err.message);
+                }
+            });
+        }
     }
     catch (error) {
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
