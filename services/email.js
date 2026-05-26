@@ -307,6 +307,54 @@ const sendWelcomeEmail = async (email, nombre) => {
     </td>
   </tr>
 
+  <!-- ── BLOQUE 5b: MINI INSTRUCTIVO ── -->
+  <tr>
+    <td style="background:#F0F4FF;padding:24px 20px;border-top:2px solid #E0E8FF;">
+      <div style="color:#1a2b4a;font-size:13px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:14px;">📋 ¿CÓMO CARGAR TU PLANILLA?</div>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">
+        <tr>
+          <td width="33%" valign="top" align="center" style="padding-right:6px;">
+            <div style="width:32px;height:32px;background:#F47C00;border-radius:50%;text-align:center;line-height:32px;font-size:15px;color:#fff;font-weight:bold;font-family:Arial;margin:0 auto 6px;">1</div>
+            <div style="color:#1a2b4a;font-size:10px;font-weight:700;font-family:Arial,sans-serif;text-transform:uppercase;margin-bottom:3px;">ENTRÁ A /APUESTAS</div>
+            <div style="color:#555;font-size:10px;font-family:Arial,sans-serif;line-height:1.4;">Seleccioná el torneo desde el menú principal.</div>
+          </td>
+          <td width="33%" valign="top" align="center" style="padding:0 3px;">
+            <div style="width:32px;height:32px;background:#F47C00;border-radius:50%;text-align:center;line-height:32px;font-size:15px;color:#fff;font-weight:bold;font-family:Arial;margin:0 auto 6px;">2</div>
+            <div style="color:#1a2b4a;font-size:10px;font-weight:700;font-family:Arial,sans-serif;text-transform:uppercase;margin-bottom:3px;">INGRESÁ EL MARCADOR</div>
+            <div style="color:#555;font-size:10px;font-family:Arial,sans-serif;line-height:1.4;">Escribí goles local y visitante para cada partido.</div>
+          </td>
+          <td width="33%" valign="top" align="center" style="padding-left:6px;">
+            <div style="width:32px;height:32px;background:#F47C00;border-radius:50%;text-align:center;line-height:32px;font-size:15px;color:#fff;font-weight:bold;font-family:Arial;margin:0 auto 6px;">3</div>
+            <div style="color:#1a2b4a;font-size:10px;font-weight:700;font-family:Arial,sans-serif;text-transform:uppercase;margin-bottom:3px;">¡GUARDÁ Y LISTO!</div>
+            <div style="color:#555;font-size:10px;font-family:Arial,sans-serif;line-height:1.4;">Tus pronósticos quedan guardados automáticamente.</div>
+          </td>
+        </tr>
+      </table>
+      <div style="color:#1a2b4a;font-size:12px;font-weight:900;font-family:'Arial Black',Arial,sans-serif;text-transform:uppercase;margin-bottom:8px;">🎯 SISTEMA DE PUNTOS</div>
+      <table width="100%" cellpadding="0" cellspacing="0" border="1" style="border-collapse:collapse;border-color:#D1DBF0;border-radius:8px;overflow:hidden;margin-bottom:12px;">
+        <tr style="background:#1a2b4a;">
+          <th style="padding:8px 10px;font-size:11px;color:#fff;text-align:left;font-family:Arial,sans-serif;">RESULTADO</th>
+          <th style="padding:8px 10px;font-size:11px;color:#FFB700;text-align:center;font-family:Arial,sans-serif;">PTS</th>
+        </tr>
+        <tr style="background:#fff;">
+          <td style="padding:7px 10px;font-size:11px;color:#333;font-family:Arial,sans-serif;">Marcador exacto (ej: 2-1 = 2-1)</td>
+          <td style="padding:7px 10px;font-size:13px;font-weight:bold;text-align:center;color:#27AE60;font-family:Arial,sans-serif;">4</td>
+        </tr>
+        <tr style="background:#F9FAFB;">
+          <td style="padding:7px 10px;font-size:11px;color:#333;font-family:Arial,sans-serif;">Resultado correcto (ej: local gana)</td>
+          <td style="padding:7px 10px;font-size:13px;font-weight:bold;text-align:center;color:#2980B9;font-family:Arial,sans-serif;">3</td>
+        </tr>
+        <tr style="background:#fff;">
+          <td style="padding:7px 10px;font-size:11px;color:#333;font-family:Arial,sans-serif;">No acertaste nada</td>
+          <td style="padding:7px 10px;font-size:13px;font-weight:bold;text-align:center;color:#999;font-family:Arial,sans-serif;">0</td>
+        </tr>
+      </table>
+      <div style="background:#FFF3CD;border:1px solid #FFD879;border-radius:6px;padding:10px 12px;">
+        <span style="color:#856404;font-size:11px;font-family:Arial,sans-serif;">⏰ <strong>¿Cuándo cierra?</strong> Las apuestas cierran 5 minutos antes del primer partido del torneo. ¡No te quedes sin cargar!</span>
+      </div>
+    </td>
+  </tr>
+
   <!-- ── BLOQUE 6: CTA BUTTON (fondo blanco, botón naranja) ── -->
   <tr>
     <td style="background:#fff;padding:20px 20px;">
@@ -1131,4 +1179,127 @@ const sendPlanillaCierreEmail = async ({ userEmail, userName, planillaNombre, to
     await sendEmail({ to: userEmail, subject, html });
 };
 exports.sendPlanillaCierreEmail = sendPlanillaCierreEmail;
+
+const sendBetConfirmationEmail = async ({ userEmail, userName, planillaNombre, torneoName, matches }) => {
+    const subject = `✅ Pronósticos guardados — ${planillaNombre}`;
+    const rows = matches.map(m => {
+        const bet = m.goles_local != null && m.goles_visitante != null
+            ? `${m.goles_local}-${m.goles_visitante}`
+            : '—';
+        return `<tr style="border-bottom:1px solid #E5E7EB;">
+          <td style="padding:10px 12px;font-size:13px;color:#111827;font-family:Arial,sans-serif;">${m.home_team} vs ${m.away_team}</td>
+          <td style="padding:10px 12px;font-size:13px;text-align:center;font-weight:bold;color:${bet === '—' ? '#9CA3AF' : '#166534'};font-family:Arial,sans-serif;">${bet}</td>
+        </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background-color:#F1F5F9;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr><td align="center" style="padding:32px 16px;">
+    <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);">
+      <tr><td style="background-color:#001A4B;padding:28px 32px 20px;text-align:center;">
+        <p style="margin:0;font-size:22px;font-weight:900;color:#FFFFFF;font-family:Arial,sans-serif;">⚽ PRODE Caballito</p>
+        <p style="margin:6px 0 0;font-size:13px;color:#93C5FD;font-family:Arial,sans-serif;">${torneoName}</p>
+      </td></tr>
+      <tr><td style="background-color:#DCFCE7;padding:16px 32px;text-align:center;">
+        <p style="margin:0;font-size:15px;font-weight:900;color:#166534;font-family:Arial,sans-serif;">✅ PRONÓSTICOS GUARDADOS</p>
+        <p style="margin:4px 0 0;font-size:13px;color:#166534;font-family:Arial,sans-serif;">¡Todos tus pronósticos están listos!</p>
+      </td></tr>
+      <tr><td style="background-color:#FFFFFF;padding:28px 32px;">
+        <p style="margin:0 0 16px;font-size:16px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;">¡Bien hecho, ${userName}! 🎉</p>
+        <p style="margin:0 0 20px;font-size:14px;color:#374151;font-family:Arial,sans-serif;line-height:1.6;">
+          Cargaste todos tus pronósticos para <strong>${planillaNombre}</strong>. Guardamos este resumen para que tengas un comprobante.
+        </p>
+        <table width="100%" cellpadding="0" cellspacing="0" border="1" style="border-collapse:collapse;border-color:#E5E7EB;border-radius:8px;overflow:hidden;">
+          <tr style="background-color:#F9FAFB;">
+            <th style="padding:10px 12px;font-size:12px;font-weight:bold;color:#6B7280;text-align:left;font-family:Arial,sans-serif;">PARTIDO</th>
+            <th style="padding:10px 12px;font-size:12px;font-weight:bold;color:#6B7280;text-align:center;font-family:Arial,sans-serif;">TU PRONÓSTICO</th>
+          </tr>
+          ${rows}
+        </table>
+        <div style="margin-top:16px;padding:12px;background:#FEF9C3;border:1px solid #FDE047;border-radius:8px;">
+          <p style="margin:0;font-size:12px;color:#713F12;font-family:Arial,sans-serif;">⏰ Recordá que las apuestas cierran 5 minutos antes del primer partido. Podés editarlas hasta ese momento.</p>
+        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px;">
+          <tr><td align="center">
+            <a href="https://prodecaballito.com/apuestas" style="display:inline-block;background-color:#001A4B;color:#FFFFFF;text-decoration:none;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;padding:14px 36px;border-radius:50px;">Ver mi planilla →</a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="background-color:#F8FAFC;padding:16px 32px;text-align:center;">
+        <p style="margin:0;font-size:11px;color:#9CA3AF;font-family:Arial,sans-serif;">prodecaballito.com · Comprobante de pronósticos</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+
+    await sendEmail({ to: userEmail, subject, html });
+};
+exports.sendBetConfirmationEmail = sendBetConfirmationEmail;
+
+const sendPlanillaGeneralEmail = async ({ userEmail, userName, torneoName, matches, betsByUser }) => {
+    const subject = `🔮 La planilla general de ${torneoName} — ¿quién apostó qué?`;
+
+    const MAX_COLS = 8;
+    const users = betsByUser.slice(0, MAX_COLS);
+    const hasMore = betsByUser.length > MAX_COLS;
+
+    const headerCols = users.map(u =>
+        `<th style="padding:8px 6px;font-size:10px;font-weight:bold;color:#fff;text-align:center;font-family:Arial,sans-serif;white-space:nowrap;">${u.nombre.split(' ')[0]}</th>`
+    ).join('');
+
+    const dataRows = matches.map(m => {
+        const betCols = users.map(u => {
+            const b = u.bets[m.id];
+            const txt = b != null ? `${b.local}-${b.visitante}` : '—';
+            const isMe = u.email === userEmail;
+            return `<td style="padding:8px 6px;font-size:12px;text-align:center;font-weight:${isMe ? 'bold' : 'normal'};color:${txt === '—' ? '#9CA3AF' : isMe ? '#001A4B' : '#374151'};background:${isMe ? '#EFF6FF' : 'transparent'};font-family:Arial,sans-serif;">${txt}</td>`;
+        }).join('');
+        return `<tr style="border-bottom:1px solid #E5E7EB;">
+          <td style="padding:8px 10px;font-size:11px;color:#111827;font-family:Arial,sans-serif;white-space:nowrap;">${m.home_team} vs ${m.away_team}</td>
+          ${betCols}
+        </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background-color:#F1F5F9;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr><td align="center" style="padding:32px 16px;">
+    <table width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;width:100%;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);">
+      <tr><td style="background-color:#001A4B;padding:28px 32px 20px;text-align:center;">
+        <p style="margin:0;font-size:22px;font-weight:900;color:#FFFFFF;font-family:Arial,sans-serif;">⚽ PRODE Caballito</p>
+        <p style="margin:6px 0 0;font-size:13px;color:#93C5FD;font-family:Arial,sans-serif;">${torneoName} — Las apuestas cerraron</p>
+      </td></tr>
+      <tr><td style="background-color:#FFFFFF;padding:28px 32px;">
+        <p style="margin:0 0 8px;font-size:16px;font-weight:900;color:#001A4B;font-family:Arial,sans-serif;">🔮 ¿Quién apostó qué, ${userName}?</p>
+        <p style="margin:0 0 20px;font-size:13px;color:#6B7280;font-family:Arial,sans-serif;">Tu columna está resaltada en azul. Las apuestas ya están cerradas — ahora a esperar los resultados.</p>
+        <div style="overflow-x:auto;">
+          <table cellpadding="0" cellspacing="0" border="1" style="border-collapse:collapse;border-color:#E5E7EB;min-width:100%;">
+            <tr style="background-color:#001A4B;">
+              <th style="padding:8px 10px;font-size:10px;font-weight:bold;color:#93C5FD;text-align:left;font-family:Arial,sans-serif;">PARTIDO</th>
+              ${headerCols}
+            </tr>
+            ${dataRows}
+          </table>
+        </div>
+        ${hasMore ? `<p style="margin:12px 0 0;font-size:11px;color:#9CA3AF;font-family:Arial,sans-serif;">* Se muestran ${MAX_COLS} participantes. Ver la planilla completa en la app.</p>` : ''}
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;">
+          <tr><td align="center">
+            <a href="https://prodecaballito.com/matriz" style="display:inline-block;background-color:#001A4B;color:#FFFFFF;text-decoration:none;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;padding:14px 36px;border-radius:50px;">Ver la matriz completa →</a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="background-color:#F8FAFC;padding:16px 32px;text-align:center;">
+        <p style="margin:0;font-size:11px;color:#9CA3AF;font-family:Arial,sans-serif;">prodecaballito.com · Planilla general al cierre del torneo</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+
+    await sendEmail({ to: userEmail, subject, html });
+};
+exports.sendPlanillaGeneralEmail = sendPlanillaGeneralEmail;
+
 //# sourceMappingURL=email.js.map
