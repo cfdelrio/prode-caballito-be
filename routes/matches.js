@@ -444,6 +444,9 @@ async function actualizarRanking(matchId = null) {
                             delta: prevPos != null ? Math.abs(prevPos - row.position) : null,
                             puntos_totales: row.puntos_totales,
                             planilla_nombre: row.nombre_planilla,
+                            // Normalized aliases for template variables
+                            puntos: row.puntos_totales,
+                            posicion: row.position,
                         },
                     },
                     metadata: {

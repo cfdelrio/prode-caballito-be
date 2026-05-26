@@ -238,6 +238,7 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
             winner_name: winner.user_name,
             matchday_name: matchday.name,
             points: winner.points,
+            puntos: winner.points,
             scorer_line: scorerNames || motivational,
             ...(imageUrl ? { image_url: imageUrl } : {}),
           },
@@ -264,6 +265,7 @@ async function processWinnerNotification(winner, matchday, winnerEmail, allEmail
               winner_name: winner.user_name,
               matchday_name: matchday.name,
               points: winner.points,
+              puntos: winner.points,
               scorer_line: scorerNames || motivational,
               ...(imageUrl ? { image_url: imageUrl } : {}),
             },
@@ -490,6 +492,8 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
           business_context: {
             matchday_name: matchday.name,
             points: r.points,
+            puntos: r.points,
+            posicion: globalPosition,
             rank_in_matchday: r.rank,
             global_position: globalPosition,
             total_planillas: totalPlanillas,
@@ -539,6 +543,7 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
         payload: {
           business_context: {
             points: r.points,
+            puntos: r.points,
             prev_max: maxPts !== null ? parseInt(maxPts) : null,
             matchday_name: matchday.name,
           },

@@ -216,6 +216,9 @@ async function _notifyBetResults({ bets, rankingMap, match, resultLocal, resultV
                             bet: { goles_local: bet.goles_local, goles_visitante: bet.goles_visitante, puntos_obtenidos: score.puntos },
                             ranking_after: { position: userRanking.position },
                             outcome: isExacto ? 'exacto' : score.puntos > 0 ? 'resultado' : null,
+                            // Normalized aliases for template variables
+                            puntos: score.puntos,
+                            posicion: userRanking.position,
                         },
                     },
                     metadata: buildEngageMetadata(userRanking, engageExtras),
