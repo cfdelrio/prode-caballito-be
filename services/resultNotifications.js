@@ -11,8 +11,8 @@ const { buildEngageMetadata } = require('../utils/engageHelpers');
 
 /**
  * Fires all post-result notifications (email, WhatsApp, push) for a published
- * match result. Intended to be called inside setImmediate — never blocks the
- * HTTP response.
+ * match result. Must be awaited before res.json() in Lambda — the runtime
+ * freezes the process as soon as the HTTP response is sent.
  *
  * @param {object} params
  * @param {object} params.match        - Full match row
