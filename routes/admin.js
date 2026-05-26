@@ -738,11 +738,19 @@ router.delete('/reset-reminder-sent', authMiddleware, requireAdmin, async (req, 
     }
 });
 
-// POST /api/admin/jobs/reset-game — resetea resultados, scores y ranking para re-testing
+// POST /api/admin/jobs/reset-game — resetea resultados, scores, ganadas y ranking para re-testing
+// Body opcional: { extend_hours: number } — empuja start_time y time_cutoff de todos los partidos
+// N horas hacia adelante para re-abrir el período de apuestas del torneo.
 router.post('/jobs/reset-game', authMiddleware, requireAdmin, async (req, res) => {
+    const extend_hours = Number(req.body?.extend_hours) || 0;
+    if (extend_hours < 0 || extend_hours > 8760) {
+        return res.status(400).json({ success: false, error: 'extend_hours debe ser entre 0 y 8760' });
+    }
+
     try {
         await db.query('BEGIN');
         await db.query('DELETE FROM scores');
+        await db.query('DELETE FROM scores_by_matchday');
         await db.query(`
             UPDATE ranking
             SET puntos_totales = 0, exactos_count = 0, goles_favor = 0, goles_contra = 0,
@@ -759,14 +767,27 @@ router.post('/jobs/reset-game', authMiddleware, requireAdmin, async (req, res) =
                 estado = 'scheduled', finished = false
             WHERE estado IN ('finished', 'live', 'halftime', 'cancelled')
         `);
+        if (extend_hours > 0) {
+            await db.query(`
+                UPDATE matches
+                SET start_time  = start_time  + ($1 || ' hours')::interval,
+                    time_cutoff = time_cutoff + ($1 || ' hours')::interval
+            `, [extend_hours]);
+        }
+        await db.query(`UPDATE matchdays SET winner_announced_at = NULL`);
+        await db.query(`DELETE FROM config WHERE key IN ('ganadores_fechas', 'ganador_fecha')`);
         await db.query('DELETE FROM reminder_sent');
         await db.query('COMMIT');
 
         invalidatePrefix('ranking:');
         invalidatePrefix('matches:');
+        invalidatePrefix('tournament_cutoff:');
 
-        console.log('[jobs/reset-game] Game state reset');
-        res.json({ success: true, message: 'Juego reseteado correctamente' });
+        const msg = extend_hours > 0
+            ? `Juego reseteado y fechas extendidas ${extend_hours}h`
+            : 'Juego reseteado correctamente';
+        console.log(`[jobs/reset-game] ${msg}`);
+        res.json({ success: true, message: msg, extend_hours });
     } catch (error) {
         await db.query('ROLLBACK').catch(() => {});
         console.error('[jobs/reset-game]', error.message);
