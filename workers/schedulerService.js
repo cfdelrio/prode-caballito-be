@@ -150,6 +150,55 @@ exports.schedulerService = {
             }
         }
         console.log(`[scheduler] planilla-cierre emails sent for tournament=${tournamentId}`);
+
+        // Enviar planilla general: todos los pronósticos de todos los participantes
+        try {
+            const { sendPlanillaGeneralEmail } = require('../services/email');
+            const allBetsRes = await connection_1.db.query(
+                `SELECT p.user_id, u.nombre, u.email, b.match_id, b.goles_local, b.goles_visitante
+                 FROM planilla_tournaments pt
+                 JOIN planillas p ON p.id = pt.planilla_id
+                 JOIN users u ON u.id = p.user_id
+                 LEFT JOIN bets b ON b.planilla_id = p.id AND b.match_id = ANY($2::uuid[])
+                 WHERE pt.tournament_id = $1 AND u.email IS NOT NULL AND u.email != ''`,
+                [tournamentId, allMatches.map(m => m.id)]
+            );
+
+            // Agrupa por usuario
+            const userMap = {};
+            for (const row of allBetsRes.rows) {
+                if (!userMap[row.user_id]) {
+                    userMap[row.user_id] = { userId: row.user_id, nombre: row.nombre, email: row.email, bets: {} };
+                }
+                if (row.match_id) {
+                    userMap[row.user_id].bets[row.match_id] = { local: row.goles_local, visitante: row.goles_visitante };
+                }
+            }
+            const betsByUser = Object.values(userMap);
+            if (betsByUser.length === 0) return;
+
+            for (const recipient of betsByUser) {
+                const idempRes = await connection_1.db.query(
+                    `INSERT INTO reminder_sent (user_id, match_id, reminder_type)
+                     VALUES ($1, $2, 'planilla_general')
+                     ON CONFLICT (user_id, match_id, reminder_type) DO NOTHING
+                     RETURNING user_id`,
+                    [recipient.userId, firstMatchId]
+                ).catch(() => ({ rows: [] }));
+                if (!idempRes.rows.length) continue;
+
+                await sendPlanillaGeneralEmail({
+                    userEmail: recipient.email,
+                    userName: recipient.nombre,
+                    torneoName,
+                    matches: allMatches,
+                    betsByUser,
+                }).catch(e => console.error(`[scheduler] planilla-general email error user=${recipient.email}:`, e.message));
+            }
+            console.log(`[scheduler] planilla-general emails sent for tournament=${tournamentId} (${betsByUser.length} recipients)`);
+        } catch (err) {
+            console.error(`[scheduler] planilla-general error tournament=${tournamentId}:`, err.message);
+        }
     },
     async markJobCompleted(matchId, jobType) {
         await connection_1.db.query(`
