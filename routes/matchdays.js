@@ -550,6 +550,7 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
         },
         metadata: {
           user_contact: {
+            nombre: r.user_name,
             phone: phoneMap[r.user_id],
             whatsapp_consent: consentMap[r.user_id],
             idioma_pref: 'es-AR',
@@ -597,6 +598,7 @@ async function _notifyMatchdayClose(rows, matchday, matchdayId) {
         },
         metadata: {
           user_contact: {
+            nombre: r.user_name,
             phone: phoneMap[r.user_id],
             whatsapp_consent: consentMap[r.user_id],
             idioma_pref: 'es-AR',
