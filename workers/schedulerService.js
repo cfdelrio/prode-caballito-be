@@ -213,13 +213,13 @@ exports.schedulerService = {
                 console.log(`Processing ${job.type} job for match ${job.matchId}`);
                 // Notify all users who placed a bet on this match — include their prediction
                 const betters = await connection_1.db.query(`
-          SELECT u.id AS user_id, u.whatsapp_number, u.whatsapp_consent,
+          SELECT u.id AS user_id, u.nombre, u.whatsapp_number, u.whatsapp_consent,
                  MIN(b.goles_local)     AS goles_local,
                  MIN(b.goles_visitante) AS goles_visitante
           FROM users u
           JOIN planillas p ON p.user_id = u.id
           JOIN bets b ON b.planilla_id = p.id AND b.match_id = $1
-          GROUP BY u.id, u.whatsapp_number, u.whatsapp_consent
+          GROUP BY u.id, u.nombre, u.whatsapp_number, u.whatsapp_consent
         `, [job.matchId]);
                 const isKickoff = job.type === 'kickoff';
                 for (const user of betters.rows) {
@@ -258,6 +258,7 @@ exports.schedulerService = {
                             },
                             metadata: {
                                 user_contact: {
+                                    nombre: user.nombre,
                                     phone: user.whatsapp_number,
                                     whatsapp_consent: user.whatsapp_consent,
                                     idioma_pref: 'es-AR',

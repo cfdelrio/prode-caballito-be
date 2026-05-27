@@ -546,6 +546,7 @@ async function actualizarRanking(matchId = null) {
                     },
                     metadata: {
                         user_contact: {
+                            nombre: row.nombre,
                             phone: row.whatsapp_number,
                             whatsapp_consent: row.whatsapp_consent,
                             idioma_pref: 'es-AR',
