@@ -161,44 +161,19 @@ router.post('/register-pending', rateLimit_1.authLimiter, async (req, res) => {
         if (existingUser.rows.length > 0) {
             return res.status(400).json({ success: false, error: 'El email ya está registrado' });
         }
-        const existingPending = await connection_1.db.query('SELECT id FROM pending_registrations WHERE email = $1', [email]);
-        if (existingPending.rows.length > 0) {
-            await connection_1.db.query('DELETE FROM pending_registrations WHERE email = $1', [email]);
-        }
         const hash_pass = await (0, utils_1.hashPassword)(password);
-        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-        const codeExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
-        const result = await connection_1.db.query(`INSERT INTO pending_registrations (nombre, email, hash_pass, verification_code, code_expires_at) 
-       VALUES ($1, $2, $3, $4, $5) 
-       RETURNING id, nombre, email`, [nombre, email, hash_pass, verificationCode, codeExpiresAt]);
-        const pendingReg = result.rows[0];
-        try {
-            if (process.env.ENGAGE_ENABLED === 'true') {
-                await sendEvent({
-                    type: 'prode.verification_code',
-                    userId: `pending:${pendingReg.id}`,
-                    idempotencyKey: `verification_code:${pendingReg.id}`,
-                    payload: { code: verificationCode, expiresIn: 900 },
-                    metadata: buildEngageMetadata({ nombre, email, idioma_pref: 'es-AR' }),
-                });
-            } else {
-                await (0, email_1.sendVerificationCode)(email, nombre, verificationCode);
-            }
-            logger.info('Verification email sent', { email });
-        }
-        catch (emailError) {
-            console.error('❌ Error sending verification email:', emailError);
-        }
+        const result = await connection_1.db.query(`INSERT INTO users (nombre, email, hash_pass, email_verified, rol)
+       VALUES ($1, $2, $3, true, 'usuario')
+       RETURNING id`, [nombre, email, hash_pass]);
+        logger.info('User registered (no email verification)', { email });
         res.status(201).json({
             success: true,
-            message: 'Revisa tu email para el código de verificación.',
-            data: {
-                pendingId: pendingReg.id,
-            },
+            message: 'Cuenta creada correctamente.',
+            data: { userId: result.rows[0].id },
         });
     }
     catch (error) {
-        logger.error('Register pending error', error);
+        logger.error('Register error', error);
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
