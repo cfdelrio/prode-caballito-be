@@ -12,6 +12,7 @@ const { runConcurrent } = require("../services/concurrency");
 const { runCutoffReminders } = require("../services/reminderCutoff");
 const { sendEventBatch } = require("../services/engageClient");
 const { buildEngageMetadata } = require("../utils/engageHelpers");
+const { invalidatePrefix } = require("../services/cache");
 
 const router = Router();
 
@@ -25,7 +26,16 @@ const adminCampaignLimiter = rateLimit({
     message: { error: 'Too many admin campaign triggers, please slow down' },
 });
 
-router.post('/test-sms', authMiddleware, requireAdmin, async (req, res) => {
+// Rate limiter más estricto para operaciones que envían a toda la base de usuarios.
+const adminBroadcastLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 3,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many broadcast operations, please wait before retrying' },
+});
+
+router.post('/test-sms', authMiddleware, requireAdmin, adminCampaignLimiter, async (req, res) => {
     try {
         const { to, message } = req.body;
         if (!to || !message) {
@@ -39,7 +49,7 @@ router.post('/test-sms', authMiddleware, requireAdmin, async (req, res) => {
     }
 });
 
-router.post('/test-whatsapp', authMiddleware, requireAdmin, adminTestWhatsappValidation, async (req, res) => {
+router.post('/test-whatsapp', authMiddleware, requireAdmin, adminCampaignLimiter, adminTestWhatsappValidation, async (req, res) => {
     try {
         const { to, message } = req.body;
         if (!to || !message) {
@@ -361,7 +371,7 @@ router.post('/jobs/recalc-matchday', authMiddleware, requireAdmin, adminRecalcMa
     }
 });
 
-router.post('/jobs/send-welcome', authMiddleware, requireAdmin, adminSendWelcomeValidation, async (req, res) => {
+router.post('/jobs/send-welcome', authMiddleware, requireAdmin, adminCampaignLimiter, adminSendWelcomeValidation, async (req, res) => {
     try {
         const { email } = req.body;
         if (!email) return res.status(400).json({ success: false, error: 'email requerido' });
@@ -376,7 +386,7 @@ router.post('/jobs/send-welcome', authMiddleware, requireAdmin, adminSendWelcome
     }
 });
 
-router.post('/jobs/trigger-winner', authMiddleware, requireAdmin, adminTriggerWinnerValidation, async (req, res) => {
+router.post('/jobs/trigger-winner', authMiddleware, requireAdmin, adminBroadcastLimiter, adminTriggerWinnerValidation, async (req, res) => {
     try {
         const { email, matchday_id, matchday_name, points } = req.body;
         if (!email) return res.status(400).json({ success: false, error: 'email requerido' });
@@ -457,7 +467,7 @@ router.get('/validate-scores', authMiddleware, requireAdmin, async (req, res) =>
     }
 });
 
-router.post('/jobs/cutoff-reminders', authMiddleware, requireAdmin, async (req, res) => {
+router.post('/jobs/cutoff-reminders', authMiddleware, requireAdmin, adminCampaignLimiter, async (req, res) => {
     try {
         const { dry_run = false, skip_window = false } = req.body || {};
         const result = await runCutoffReminders({ dryRun: dry_run, skipWindow: skip_window });
@@ -724,6 +734,63 @@ router.delete('/reset-reminder-sent', authMiddleware, requireAdmin, async (req, 
         });
     } catch (error) {
         console.error('[admin/reset-reminder-sent]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// POST /api/admin/jobs/reset-game — resetea resultados, scores, ganadas y ranking para re-testing
+// Body opcional: { extend_hours: number } — empuja start_time y time_cutoff de todos los partidos
+// N horas hacia adelante para re-abrir el período de apuestas del torneo.
+router.post('/jobs/reset-game', authMiddleware, requireAdmin, async (req, res) => {
+    const extend_hours = Number(req.body?.extend_hours) || 0;
+    if (extend_hours < 0 || extend_hours > 8760) {
+        return res.status(400).json({ success: false, error: 'extend_hours debe ser entre 0 y 8760' });
+    }
+
+    try {
+        await db.query('BEGIN');
+        await db.query('DELETE FROM scores');
+        await db.query('DELETE FROM scores_by_matchday');
+        await db.query(`
+            UPDATE ranking
+            SET puntos_totales = 0, exactos_count = 0, goles_favor = 0, goles_contra = 0,
+                position = NULL, aciertos_celeste = 0, aciertos_rojo = 0,
+                aciertos_verde = 0, aciertos_amarillo = 0
+        `);
+        await db.query(`
+            UPDATE tournament_rankings
+            SET puntos = 0, total_exactos = 0, total_aciertos = 0, posicion = NULL
+        `);
+        await db.query(`
+            UPDATE matches
+            SET resultado_local = NULL, resultado_visitante = NULL,
+                estado = 'scheduled', finished = false
+            WHERE estado IN ('finished', 'live', 'halftime', 'cancelled')
+        `);
+        if (extend_hours > 0) {
+            await db.query(`
+                UPDATE matches
+                SET start_time  = start_time  + ($1 || ' hours')::interval,
+                    time_cutoff = time_cutoff + ($1 || ' hours')::interval
+            `, [extend_hours]);
+        }
+        await db.query(`UPDATE matchdays SET winner_announced_at = NULL`);
+        await db.query(`DELETE FROM config WHERE key IN ('ganadores_fechas', 'ganador_fecha')`);
+        await db.query('DELETE FROM reminder_sent');
+        await db.query('COMMIT');
+
+        invalidatePrefix('ranking:');
+        invalidatePrefix('matches:');
+        invalidatePrefix('tournament_cutoff:');
+
+        const msg = extend_hours > 0
+            ? `Juego reseteado y fechas extendidas ${extend_hours}h`
+            : 'Juego reseteado correctamente';
+        console.log(`[jobs/reset-game] ${msg}`);
+        res.json({ success: true, message: msg, extend_hours });
+    } catch (error) {
+        await db.query('ROLLBACK').catch(() => {});
+        console.error('[jobs/reset-game]', error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 });

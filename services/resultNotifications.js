@@ -11,8 +11,8 @@ const { buildEngageMetadata } = require('../utils/engageHelpers');
 
 /**
  * Fires all post-result notifications (email, WhatsApp, push) for a published
- * match result. Intended to be called inside setImmediate — never blocks the
- * HTTP response.
+ * match result. Must be awaited before res.json() in Lambda — the runtime
+ * freezes the process as soon as the HTTP response is sent.
  *
  * @param {object} params
  * @param {object} params.match        - Full match row
@@ -216,6 +216,9 @@ async function _notifyBetResults({ bets, rankingMap, match, resultLocal, resultV
                             bet: { goles_local: bet.goles_local, goles_visitante: bet.goles_visitante, puntos_obtenidos: score.puntos },
                             ranking_after: { position: userRanking.position },
                             outcome: isExacto ? 'exacto' : score.puntos > 0 ? 'resultado' : null,
+                            // Normalized aliases for template variables
+                            puntos: score.puntos,
+                            posicion: userRanking.position,
                         },
                     },
                     metadata: buildEngageMetadata(userRanking, engageExtras),
