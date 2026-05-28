@@ -65,6 +65,15 @@ router.get('/', auth_1.authMiddleware, async (req, res) => {
         res.status(500).json({ success: false, error: 'Error interno del servidor' });
     }
 });
+router.get('/stats', async (req, res) => {
+    try {
+        const result = await connection_1.db.query('SELECT COUNT(*)::int AS total FROM users');
+        res.json({ success: true, data: { total_users: result.rows[0].total } });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, error: 'Error interno' });
+    }
+});
 router.get('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, res) => {
     try {
         const { id } = req.params;
@@ -273,15 +282,6 @@ router.get('/admin/info', async (req, res) => {
     }
     catch (error) {
         console.error('Get admin error:', error);
-        res.status(500).json({ success: false, error: 'Error interno' });
-    }
-});
-router.get('/stats', async (req, res) => {
-    try {
-        const result = await connection_1.db.query('SELECT COUNT(*)::int AS total FROM users');
-        res.json({ success: true, data: { total_users: result.rows[0].total } });
-    }
-    catch (error) {
         res.status(500).json({ success: false, error: 'Error interno' });
     }
 });
