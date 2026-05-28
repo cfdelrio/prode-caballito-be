@@ -276,6 +276,15 @@ router.get('/admin/info', async (req, res) => {
         res.status(500).json({ success: false, error: 'Error interno' });
     }
 });
+router.get('/stats', async (req, res) => {
+    try {
+        const result = await connection_1.db.query('SELECT COUNT(*)::int AS total FROM users');
+        res.json({ success: true, data: { total_users: result.rows[0].total } });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, error: 'Error interno' });
+    }
+});
 router.get('/all', async (req, res) => {
     try {
         const result = await connection_1.db.query('SELECT id, nombre, foto_url, rol FROM users ORDER BY nombre');
