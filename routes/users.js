@@ -364,7 +364,7 @@ router.delete('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.u
         await connection_1.db.query(`DELETE FROM scores WHERE planilla_id IN (SELECT id FROM planillas WHERE user_id = $1)`, [id]);
         await connection_1.db.query(`DELETE FROM scores_by_matchday WHERE planilla_id IN (SELECT id FROM planillas WHERE user_id = $1)`, [id]);
         await connection_1.db.query(`DELETE FROM tournament_rankings WHERE planilla_id IN (SELECT id FROM planillas WHERE user_id = $1)`, [id]);
-        await connection_1.db.query(`DELETE FROM ranking WHERE user_id = $1`, [id]);
+        await connection_1.db.query(`DELETE FROM ranking WHERE planilla_id IN (SELECT id FROM planillas WHERE user_id = $1)`, [id]);
         await connection_1.db.query(`DELETE FROM bets WHERE planilla_id IN (SELECT id FROM planillas WHERE user_id = $1)`, [id]);
         await connection_1.db.query(`DELETE FROM reminder_sent WHERE planilla_id IN (SELECT id FROM planillas WHERE user_id = $1)`, [id]);
         await connection_1.db.query(`DELETE FROM planillas WHERE user_id = $1`, [id]);
