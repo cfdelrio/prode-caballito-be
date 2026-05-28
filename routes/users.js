@@ -350,5 +350,34 @@ router.get('/:id/gamification', auth_1.authMiddleware, validation_1.uuidParam, a
     }
 });
 
+router.delete('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.uuidParam, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const target = await connection_1.db.query('SELECT id, rol FROM users WHERE id = $1', [id]);
+        if (target.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+        }
+        if (target.rows[0].rol === 'admin') {
+            return res.status(403).json({ success: false, error: 'No se puede eliminar un usuario admin' });
+        }
+        await connection_1.db.query('BEGIN');
+        await connection_1.db.query(`DELETE FROM scores WHERE planilla_id IN (SELECT id FROM planillas WHERE user_id = $1)`, [id]);
+        await connection_1.db.query(`DELETE FROM scores_by_matchday WHERE planilla_id IN (SELECT id FROM planillas WHERE user_id = $1)`, [id]);
+        await connection_1.db.query(`DELETE FROM tournament_rankings WHERE planilla_id IN (SELECT id FROM planillas WHERE user_id = $1)`, [id]);
+        await connection_1.db.query(`DELETE FROM ranking WHERE planilla_id IN (SELECT id FROM planillas WHERE user_id = $1)`, [id]);
+        await connection_1.db.query(`DELETE FROM bets WHERE planilla_id IN (SELECT id FROM planillas WHERE user_id = $1)`, [id]);
+        await connection_1.db.query(`DELETE FROM reminder_sent WHERE planilla_id IN (SELECT id FROM planillas WHERE user_id = $1)`, [id]);
+        await connection_1.db.query(`DELETE FROM planillas WHERE user_id = $1`, [id]);
+        await connection_1.db.query(`DELETE FROM comments WHERE author_id = $1`, [id]);
+        await connection_1.db.query(`DELETE FROM users WHERE id = $1`, [id]);
+        await connection_1.db.query('COMMIT');
+        res.json({ success: true, message: 'Usuario eliminado correctamente' });
+    }
+    catch (error) {
+        await connection_1.db.query('ROLLBACK').catch(() => {});
+        console.error('[users/delete]', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 exports.default = router;
-//# sourceMappingURL=users.js.map
