@@ -6,6 +6,14 @@ const auth_1 = require("../middleware/auth");
 const validation_1 = require("../middleware/validation");
 const router = (0, express_1.Router)();
 
+// ── Ensure locked column exists (auto-migrate) ──────────────────────────────
+let _lockedColEnsured = false;
+async function ensureLockedColumn() {
+    if (_lockedColEnsured) return;
+    await connection_1.db.query('ALTER TABLE planillas ADD COLUMN IF NOT EXISTS locked BOOLEAN DEFAULT false');
+    _lockedColEnsured = true;
+}
+
 // ── planilla_tournaments: tabla N:N planilla ↔ torneo ─────────────────────────
 let _ptTableEnsured = false;
 async function ensurePlanillaTournamentsTable() {
@@ -50,6 +58,7 @@ router.get('/public/all', async (req, res) => {
 router.get('/', auth_1.authMiddleware, async (req, res) => {
     try {
         await ensurePlanillaTournamentsTable();
+        await ensureLockedColumn();
         const result = await connection_1.db.query(`
             SELECT p.*,
                 COALESCE(SUM(s.puntos_obtenidos), 0) as puntos_totales,
@@ -123,6 +132,7 @@ router.get('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, re
 });
 router.put('/:id/lock', auth_1.authMiddleware, validation_1.uuidParam, async (req, res) => {
     try {
+        await ensureLockedColumn();
         const { id } = req.params;
         const existing = await connection_1.db.query('SELECT user_id, precio_pagado, locked FROM planillas WHERE id = $1', [id]);
         if (!existing.rows.length) return res.status(404).json({ success: false, error: 'Planilla no encontrada' });
@@ -198,6 +208,7 @@ router.delete('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req,
 });
 router.get('/admin/all', auth_1.authMiddleware, auth_1.requireAdmin, async (req, res) => {
     try {
+        await ensureLockedColumn();
         const result = await connection_1.db.query(`
       SELECT
         p.id,
