@@ -8,6 +8,14 @@ const scoring_1 = require("../services/scoring");
 const email_1 = require("../services/email");
 const cache = require("../services/cache");
 const router = (0, express_1.Router)();
+
+let _lockedColEnsured = false;
+async function ensureLockedColumn() {
+    if (_lockedColEnsured) return;
+    await connection_1.db.query('ALTER TABLE planillas ADD COLUMN IF NOT EXISTS locked BOOLEAN DEFAULT false');
+    _lockedColEnsured = true;
+}
+
 async function getTournamentCutoff(tid) {
     return cache.getOrFetch(`tournament_cutoff:${tid}`, async () => {
         const r = await connection_1.db.query('SELECT MIN(start_time) as t FROM matches WHERE tournament_id = $1', [tid]);
@@ -119,6 +127,7 @@ router.get('/planillas/:planillaId/bets-old', auth_1.authMiddleware, validation_
 });
 router.post('/', auth_1.authMiddleware, validation_1.betValidation, async (req, res) => {
     try {
+        await ensureLockedColumn();
         const { planilla_id, match_id, goles_local, goles_visitante } = req.body;
         const planillaResult = await connection_1.db.query('SELECT user_id, precio_pagado, locked FROM planillas WHERE id = $1', [planilla_id]);
         if (planillaResult.rows.length === 0) {
@@ -159,6 +168,7 @@ router.post('/', auth_1.authMiddleware, validation_1.betValidation, async (req, 
 });
 router.post('/score', auth_1.authMiddleware, validation_1.betScoreValidation, async (req, res) => {
     try {
+        await ensureLockedColumn();
         const { planilla_id, match_id, score, remind_before_minutes } = req.body;
         const planillaResult = await connection_1.db.query('SELECT user_id, precio_pagado, locked FROM planillas WHERE id = $1', [planilla_id]);
         if (planillaResult.rows.length === 0) {
@@ -297,6 +307,7 @@ router.post('/score', auth_1.authMiddleware, validation_1.betScoreValidation, as
 });
 router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, res) => {
     try {
+        await ensureLockedColumn();
         const { id } = req.params;
         const { goles_local, goles_visitante } = req.body;
         const betResult = await connection_1.db.query(`SELECT b.*, p.user_id, p.precio_pagado, p.locked, m.time_cutoff, m.tournament_id
@@ -332,6 +343,7 @@ router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, re
 });
 router.delete('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, res) => {
     try {
+        await ensureLockedColumn();
         const { id } = req.params;
         const betResult = await connection_1.db.query(`SELECT b.*, p.user_id, p.precio_pagado, p.locked, m.time_cutoff, m.tournament_id
        FROM bets b
@@ -402,9 +414,10 @@ router.get('/all-for-matrix', async (req, res) => {
 // Eliminar apuesta por planilla y match
 router.delete('/planillas/:planillaId/matches/:matchId', auth_1.authMiddleware, async (req, res) => {
     try {
+        await ensureLockedColumn();
         const { planillaId, matchId } = req.params;
         // Verificar que la planilla existe y pertenece al usuario
-        const planillaResult = await connection_1.db.query('SELECT user_id, precio_pagado FROM planillas WHERE id = $1', [planillaId]);
+        const planillaResult = await connection_1.db.query('SELECT user_id, precio_pagado, locked FROM planillas WHERE id = $1', [planillaId]);
         if (planillaResult.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Planilla no encontrada' });
         }
