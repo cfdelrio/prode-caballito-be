@@ -136,7 +136,7 @@ router.post('/', auth_1.authMiddleware, validation_1.betValidation, async (req, 
         if (planillaResult.rows[0].user_id !== req.user.userId && req.user.rol === 'usuario') {
             return res.status(403).json({ success: false, error: 'No tienes permisos para esta planilla' });
         }
-        if ((planillaResult.rows[0].locked || planillaResult.rows[0].precio_pagado) && req.user.rol !== 'admin') {
+        if (planillaResult.rows[0].locked && req.user.rol !== 'admin') {
             return res.status(400).json({ success: false, error: 'La planilla ya fue cerrada y no se puede modificar' });
         }
         const matchResult = await connection_1.db.query('SELECT * FROM matches WHERE id = $1', [match_id]);
