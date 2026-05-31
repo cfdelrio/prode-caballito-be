@@ -124,11 +124,11 @@ router.get('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, re
 router.put('/:id/lock', auth_1.authMiddleware, validation_1.uuidParam, async (req, res) => {
     try {
         const { id } = req.params;
-        const existing = await connection_1.db.query('SELECT user_id, precio_pagado FROM planillas WHERE id = $1', [id]);
+        const existing = await connection_1.db.query('SELECT user_id, precio_pagado, locked FROM planillas WHERE id = $1', [id]);
         if (!existing.rows.length) return res.status(404).json({ success: false, error: 'Planilla no encontrada' });
         if (existing.rows[0].user_id !== req.user.userId)
             return res.status(403).json({ success: false, error: 'No tienes permisos' });
-        if (existing.rows[0].precio_pagado)
+        if (existing.rows[0].locked || existing.rows[0].precio_pagado)
             return res.status(400).json({ success: false, error: 'La planilla ya está cerrada' });
         // Verificar que todos los partidos pendientes tienen apuesta en esta planilla
         const pendingWithoutBet = await connection_1.db.query(`
@@ -148,7 +148,7 @@ router.put('/:id/lock', auth_1.authMiddleware, validation_1.uuidParam, async (re
                 missing: pendingWithoutBet.rows.length,
             });
         }
-        const result = await connection_1.db.query('UPDATE planillas SET precio_pagado = true WHERE id = $1 RETURNING *', [id]);
+        const result = await connection_1.db.query('UPDATE planillas SET locked = true WHERE id = $1 RETURNING *', [id]);
         res.json({ success: true, data: result.rows[0] });
     }
     catch (error) {
@@ -199,10 +199,11 @@ router.delete('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req,
 router.get('/admin/all', auth_1.authMiddleware, auth_1.requireAdmin, async (req, res) => {
     try {
         const result = await connection_1.db.query(`
-      SELECT 
+      SELECT
         p.id,
         p.nombre_planilla,
         p.precio_pagado,
+        p.locked,
         p.created_at,
         p.user_id,
         u.nombre as user_name,
@@ -211,7 +212,7 @@ router.get('/admin/all', auth_1.authMiddleware, auth_1.requireAdmin, async (req,
       FROM planillas p
       JOIN users u ON p.user_id = u.id
       LEFT JOIN scores s ON p.id = s.planilla_id
-      GROUP BY p.id, p.nombre_planilla, p.precio_pagado, p.created_at, p.user_id, u.nombre, u.email
+      GROUP BY p.id, p.nombre_planilla, p.precio_pagado, p.locked, p.created_at, p.user_id, u.nombre, u.email
       ORDER BY p.created_at DESC
     `);
         res.json({ success: true, data: result.rows });
@@ -224,12 +225,13 @@ router.get('/admin/all', auth_1.authMiddleware, auth_1.requireAdmin, async (req,
 router.put('/admin/:id', auth_1.authMiddleware, auth_1.requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
-        const { nombre_planilla, precio_pagado } = req.body;
-        const result = await connection_1.db.query(`UPDATE planillas SET 
+        const { nombre_planilla, precio_pagado, locked } = req.body;
+        const result = await connection_1.db.query(`UPDATE planillas SET
         nombre_planilla = COALESCE($1, nombre_planilla),
-        precio_pagado = COALESCE($2, precio_pagado)
-       WHERE id = $3
-       RETURNING *`, [nombre_planilla, precio_pagado, id]);
+        precio_pagado = COALESCE($2, precio_pagado),
+        locked = COALESCE($3, locked)
+       WHERE id = $4
+       RETURNING *`, [nombre_planilla, precio_pagado, locked, id]);
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Planilla no encontrada' });
         }
