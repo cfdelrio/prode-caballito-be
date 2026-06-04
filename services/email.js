@@ -1302,4 +1302,38 @@ const sendPlanillaGeneralEmail = async ({ userEmail, userName, torneoName, match
 };
 exports.sendPlanillaGeneralEmail = sendPlanillaGeneralEmail;
 
+const sendPlanillaDeletedEmail = async ({ userEmail, userName, planillaNombre }) => {
+    const firstName = (userName || 'jugador').split(' ')[0];
+    const subject = `Tu planilla "${planillaNombre}" fue eliminada`;
+    const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.07);">
+        <tr><td style="background:#001A4B;padding:24px 32px;">
+          <p style="margin:0;font-size:20px;font-weight:bold;color:#FFDF00;">⚽ PRODE Caballito</p>
+        </td></tr>
+        <tr><td style="padding:32px;">
+          <p style="font-size:16px;color:#333;margin:0 0 16px;">Hola <strong>${firstName}</strong>,</p>
+          <p style="font-size:14px;color:#555;margin:0 0 16px;">
+            Tu planilla <strong>"${planillaNombre}"</strong> fue eliminada por un administrador.
+          </p>
+          <p style="font-size:14px;color:#555;margin:0 0 24px;">
+            Si tenés dudas o creés que fue un error, escribinos por WhatsApp.
+          </p>
+          <a href="https://prodecaballito.com" style="display:inline-block;background:#001A4B;color:#FFDF00;text-decoration:none;font-size:14px;font-weight:bold;padding:12px 28px;border-radius:50px;">
+            Ir al PRODE →
+          </a>
+        </td></tr>
+        <tr><td style="padding:16px 32px;background:#f8f8f8;border-top:1px solid #eee;">
+          <p style="font-size:11px;color:#999;margin:0;">© ${new Date().getFullYear()} PRODE Caballito · noreply@prodecaballito.com</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+    await sendEmail({ to: userEmail, subject, html });
+};
+exports.sendPlanillaDeletedEmail = sendPlanillaDeletedEmail;
+
 //# sourceMappingURL=email.js.map
