@@ -4,6 +4,7 @@ const express_1 = require("express");
 const connection_1 = require("../db/connection");
 const auth_1 = require("../middleware/auth");
 const validation_1 = require("../middleware/validation");
+const { sendPlanillaDeletedEmail } = require('../services/email');
 const router = (0, express_1.Router)();
 
 // ── Ensure locked column exists (auto-migrate) ──────────────────────────────
@@ -256,6 +257,13 @@ router.put('/admin/:id', auth_1.authMiddleware, auth_1.requireAdmin, async (req,
 router.delete('/admin/:id', auth_1.authMiddleware, auth_1.requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
+        // Fetch user data before deletion for email notification
+        const planillaRes = await connection_1.db.query(
+            `SELECT p.nombre_planilla, u.email AS user_email, u.nombre AS user_name
+             FROM planillas p JOIN users u ON u.id = p.user_id
+             WHERE p.id = $1`, [id]
+        );
+        const planillaData = planillaRes.rows[0] ?? null;
         const rankingRes = await connection_1.db.query('SELECT id FROM ranking WHERE planilla_id = $1', [id]);
         if (rankingRes.rows.length > 0) {
             const rankingIds = rankingRes.rows.map(r => r.id);
@@ -264,6 +272,14 @@ router.delete('/admin/:id', auth_1.authMiddleware, auth_1.requireAdmin, async (r
         await connection_1.db.query("DELETE FROM comments WHERE target_type = 'planilla' AND target_id = $1", [id]);
         await connection_1.db.query('DELETE FROM planillas WHERE id = $1', [id]);
         res.json({ success: true, message: 'Planilla eliminada' });
+        // Fire-and-forget: email failure must not affect the response
+        if (planillaData) {
+            sendPlanillaDeletedEmail({
+                userEmail: planillaData.user_email,
+                userName: planillaData.user_name,
+                planillaNombre: planillaData.nombre_planilla,
+            }).catch(err => console.error('[planillas] email notification failed:', err));
+        }
     }
     catch (error) {
         console.error('Delete planilla error:', error);
