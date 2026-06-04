@@ -8,6 +8,14 @@ const scoring_1 = require("../services/scoring");
 const email_1 = require("../services/email");
 const cache = require("../services/cache");
 const router = (0, express_1.Router)();
+
+let _lockedColEnsured = false;
+async function ensureLockedColumn() {
+    if (_lockedColEnsured) return;
+    await connection_1.db.query('ALTER TABLE planillas ADD COLUMN IF NOT EXISTS locked BOOLEAN DEFAULT false');
+    _lockedColEnsured = true;
+}
+
 async function getTournamentCutoff(tid) {
     return cache.getOrFetch(`tournament_cutoff:${tid}`, async () => {
         const r = await connection_1.db.query('SELECT MIN(start_time) as t FROM matches WHERE tournament_id = $1', [tid]);
@@ -119,15 +127,16 @@ router.get('/planillas/:planillaId/bets-old', auth_1.authMiddleware, validation_
 });
 router.post('/', auth_1.authMiddleware, validation_1.betValidation, async (req, res) => {
     try {
+        await ensureLockedColumn();
         const { planilla_id, match_id, goles_local, goles_visitante } = req.body;
-        const planillaResult = await connection_1.db.query('SELECT user_id, precio_pagado FROM planillas WHERE id = $1', [planilla_id]);
+        const planillaResult = await connection_1.db.query('SELECT user_id, precio_pagado, locked FROM planillas WHERE id = $1', [planilla_id]);
         if (planillaResult.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Planilla no encontrada' });
         }
         if (planillaResult.rows[0].user_id !== req.user.userId && req.user.rol === 'usuario') {
             return res.status(403).json({ success: false, error: 'No tienes permisos para esta planilla' });
         }
-        if (planillaResult.rows[0].precio_pagado && req.user.rol !== 'admin') {
+        if (planillaResult.rows[0].locked && req.user.rol !== 'admin') {
             return res.status(400).json({ success: false, error: 'La planilla ya fue cerrada y no se puede modificar' });
         }
         const matchResult = await connection_1.db.query('SELECT * FROM matches WHERE id = $1', [match_id]);
@@ -159,8 +168,9 @@ router.post('/', auth_1.authMiddleware, validation_1.betValidation, async (req, 
 });
 router.post('/score', auth_1.authMiddleware, validation_1.betScoreValidation, async (req, res) => {
     try {
+        await ensureLockedColumn();
         const { planilla_id, match_id, score, remind_before_minutes } = req.body;
-        const planillaResult = await connection_1.db.query('SELECT user_id, precio_pagado FROM planillas WHERE id = $1', [planilla_id]);
+        const planillaResult = await connection_1.db.query('SELECT user_id, precio_pagado, locked FROM planillas WHERE id = $1', [planilla_id]);
         if (planillaResult.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Planilla no encontrada' });
         }
@@ -168,7 +178,7 @@ router.post('/score', auth_1.authMiddleware, validation_1.betScoreValidation, as
         if (planilla.user_id !== req.user.userId && req.user.rol !== 'admin') {
             return res.status(403).json({ success: false, error: 'No tienes permisos' });
         }
-        if (planilla.precio_pagado && req.user.rol !== 'admin') {
+        if ((planilla.locked || planilla.precio_pagado) && req.user.rol !== 'admin') {
             return res.status(400).json({ success: false, error: 'La planilla ya fue cerrada y no se puede modificar' });
         }
         const matchResult = await connection_1.db.query('SELECT * FROM matches WHERE id = $1', [match_id]);
@@ -297,9 +307,10 @@ router.post('/score', auth_1.authMiddleware, validation_1.betScoreValidation, as
 });
 router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, res) => {
     try {
+        await ensureLockedColumn();
         const { id } = req.params;
         const { goles_local, goles_visitante } = req.body;
-        const betResult = await connection_1.db.query(`SELECT b.*, p.user_id, p.precio_pagado, m.time_cutoff, m.tournament_id
+        const betResult = await connection_1.db.query(`SELECT b.*, p.user_id, p.precio_pagado, p.locked, m.time_cutoff, m.tournament_id
        FROM bets b
        JOIN planillas p ON b.planilla_id = p.id
        JOIN matches m ON b.match_id = m.id
@@ -311,7 +322,7 @@ router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, re
         if (bet.user_id !== req.user.userId && req.user.rol === 'usuario') {
             return res.status(403).json({ success: false, error: 'No tienes permisos' });
         }
-        if (bet.precio_pagado && req.user.rol !== 'admin') {
+        if ((bet.locked || bet.precio_pagado) && req.user.rol !== 'admin') {
             return res.status(400).json({ success: false, error: 'La planilla ya fue cerrada y no se puede modificar' });
         }
         if (req.user.rol !== 'admin') {
@@ -332,8 +343,9 @@ router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, re
 });
 router.delete('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, res) => {
     try {
+        await ensureLockedColumn();
         const { id } = req.params;
-        const betResult = await connection_1.db.query(`SELECT b.*, p.user_id, p.precio_pagado, m.time_cutoff, m.tournament_id
+        const betResult = await connection_1.db.query(`SELECT b.*, p.user_id, p.precio_pagado, p.locked, m.time_cutoff, m.tournament_id
        FROM bets b
        JOIN planillas p ON b.planilla_id = p.id
        JOIN matches m ON b.match_id = m.id
@@ -345,7 +357,7 @@ router.delete('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req,
         if (bet.user_id !== req.user.userId && req.user.rol === 'usuario') {
             return res.status(403).json({ success: false, error: 'No tienes permisos' });
         }
-        if (bet.precio_pagado && req.user.rol !== 'admin') {
+        if ((bet.locked || bet.precio_pagado) && req.user.rol !== 'admin') {
             return res.status(400).json({ success: false, error: 'La planilla ya fue cerrada y no se puede modificar' });
         }
         if (req.user.rol !== 'admin') {
@@ -402,9 +414,10 @@ router.get('/all-for-matrix', async (req, res) => {
 // Eliminar apuesta por planilla y match
 router.delete('/planillas/:planillaId/matches/:matchId', auth_1.authMiddleware, async (req, res) => {
     try {
+        await ensureLockedColumn();
         const { planillaId, matchId } = req.params;
         // Verificar que la planilla existe y pertenece al usuario
-        const planillaResult = await connection_1.db.query('SELECT user_id, precio_pagado FROM planillas WHERE id = $1', [planillaId]);
+        const planillaResult = await connection_1.db.query('SELECT user_id, precio_pagado, locked FROM planillas WHERE id = $1', [planillaId]);
         if (planillaResult.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Planilla no encontrada' });
         }
@@ -413,7 +426,7 @@ router.delete('/planillas/:planillaId/matches/:matchId', auth_1.authMiddleware, 
         if (planilla.user_id !== req.user.userId && req.user.rol === 'usuario') {
             return res.status(403).json({ success: false, error: 'No tienes permisos para eliminar este pronóstico' });
         }
-        if (planilla.precio_pagado && req.user.rol !== 'admin') {
+        if ((planilla.locked || planilla.precio_pagado) && req.user.rol !== 'admin') {
             return res.status(400).json({ success: false, error: 'La planilla ya fue cerrada y no se puede modificar' });
         }
         // Verificar que el cierre del torneo (5min antes del primer partido) no haya pasado
