@@ -29,6 +29,7 @@ const allowedOrigins = [
     'https://d16s2xc71j0bqo.cloudfront.net',
     'https://prodecaballito.com',
     'https://www.prodecaballito.com',
+    'https://hr.prodecaballito.com',
 ];
 exports.corsMiddleware = (0, cors_1.default)({
     origin: function (origin, callback) {
