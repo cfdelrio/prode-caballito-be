@@ -135,11 +135,11 @@ router.put('/:id/lock', auth_1.authMiddleware, validation_1.uuidParam, async (re
     try {
         await ensureLockedColumn();
         const { id } = req.params;
-        const existing = await connection_1.db.query('SELECT user_id, precio_pagado, locked FROM planillas WHERE id = $1', [id]);
+        const existing = await connection_1.db.query('SELECT user_id, locked FROM planillas WHERE id = $1', [id]);
         if (!existing.rows.length) return res.status(404).json({ success: false, error: 'Planilla no encontrada' });
         if (existing.rows[0].user_id !== req.user.userId)
             return res.status(403).json({ success: false, error: 'No tienes permisos' });
-        if (existing.rows[0].locked || existing.rows[0].precio_pagado)
+        if (existing.rows[0].locked)
             return res.status(400).json({ success: false, error: 'La planilla ya está cerrada' });
         // Verificar que todos los partidos pendientes tienen apuesta en esta planilla
         const pendingWithoutBet = await connection_1.db.query(`
