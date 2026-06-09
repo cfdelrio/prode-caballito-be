@@ -15,16 +15,26 @@ const comparePassword = async (password, hash) => {
     return bcryptjs_1.default.compare(password, hash);
 };
 exports.comparePassword = comparePassword;
+// Resuelve el JWT secret o lanza un error claro. Localiza el fallo en las
+// operaciones de token (lo captura el try/catch de cada ruta de auth) en vez
+// de tumbar toda la app al cargar el módulo si falta la env var.
+const requireJwtSecret = () => {
+    const secret = config_1.config.jwt.secret;
+    if (!secret) {
+        throw new Error('JWT_SECRET no está configurado en el entorno');
+    }
+    return secret;
+};
 const generateToken = (payload) => {
-    return jsonwebtoken_1.default.sign(payload, config_1.config.jwt.secret, { expiresIn: '15m' });
+    return jsonwebtoken_1.default.sign(payload, requireJwtSecret(), { expiresIn: '15m' });
 };
 exports.generateToken = generateToken;
 const generateRefreshToken = (payload) => {
-    return jsonwebtoken_1.default.sign(payload, config_1.config.jwt.secret, { expiresIn: '7d' });
+    return jsonwebtoken_1.default.sign(payload, requireJwtSecret(), { expiresIn: '7d' });
 };
 exports.generateRefreshToken = generateRefreshToken;
 const verifyToken = (token) => {
-    return jsonwebtoken_1.default.verify(token, config_1.config.jwt.secret);
+    return jsonwebtoken_1.default.verify(token, requireJwtSecret());
 };
 exports.verifyToken = verifyToken;
 const generateUUID = () => {
