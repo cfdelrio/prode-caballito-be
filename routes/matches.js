@@ -14,6 +14,9 @@ const router = (0, express_1.Router)();
 
 const MATCHES_TTL = 30_000; // 30s
 
+// GET /matches
+// Query params: page, limit, estado (pending|live|finished), planilla_id, tournament_id
+// Used by: home, apuestas (grupos), EliminatoriaBracket (fases de torneo)
 router.get('/', async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
