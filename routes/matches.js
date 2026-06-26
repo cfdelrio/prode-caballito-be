@@ -14,6 +14,23 @@ const router = (0, express_1.Router)();
 
 const MATCHES_TTL = 30_000; // 30s
 
+let _knockoutColsEnsured = false;
+async function ensureKnockoutColumns() {
+    if (_knockoutColsEnsured) return;
+    await connection_1.db.query(`
+        ALTER TABLE matches
+          ADD COLUMN IF NOT EXISTS home_source_match_id UUID REFERENCES matches(id) ON DELETE SET NULL,
+          ADD COLUMN IF NOT EXISTS away_source_match_id UUID REFERENCES matches(id) ON DELETE SET NULL,
+          ADD COLUMN IF NOT EXISTS home_source_kind VARCHAR(10),
+          ADD COLUMN IF NOT EXISTS away_source_kind VARCHAR(10),
+          ADD COLUMN IF NOT EXISTS penales_local INTEGER,
+          ADD COLUMN IF NOT EXISTS penales_visitante INTEGER
+    `);
+    _knockoutColsEnsured = true;
+}
+// Run eagerly so columns exist before the first request arrives
+setImmediate(() => ensureKnockoutColumns().catch(e => console.warn("[matches] ensureKnockoutColumns:", e.message)));
+
 // Resolve who advances from a knockout result. The 90' score decides; on a tie the
 // penalty shootout breaks it. Returns null sides when undecided (tie, no penalties yet).
 function resolveAdvance(rl, rv, pl, pv) {
@@ -132,6 +149,7 @@ router.get('/:id', validation_1.uuidParam, async (req, res) => {
 });
 router.post('/', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matchValidation, async (req, res) => {
     try {
+        await ensureKnockoutColumns();
         const { home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, time_cutoff, planilla_id, tournament_id, sede, grupo, jornada, home_source_match_id, away_source_match_id, home_source_kind, away_source_kind } = req.body;
         const cutoffTime = time_cutoff || new Date(new Date(start_time).getTime() - 30 * 60 * 1000);
         const result = await connection_1.db.query(`INSERT INTO matches (home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, time_cutoff, planilla_id, tournament_id, sede, grupo, jornada, home_source_match_id, away_source_match_id, home_source_kind, away_source_kind)
@@ -152,6 +170,7 @@ router.post('/', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matchV
 });
 router.put('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matchUpdateValidation, async (req, res) => {
     try {
+        await ensureKnockoutColumns();
         const { id } = req.params;
         const { home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, time_cutoff, estado, finished, tournament_id, sede, grupo, jornada, home_source_match_id, away_source_match_id, home_source_kind, away_source_kind } = req.body;
         const oldResult = await connection_1.db.query('SELECT * FROM matches WHERE id = $1', [id]);
@@ -209,6 +228,7 @@ router.put('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matc
 });
 router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matchResultValidation, async (req, res) => {
     try {
+        await ensureKnockoutColumns();
         const { matchId } = req.params;
         const { resultado_local, resultado_visitante, penales_local, penales_visitante } = req.body;
         const matchResult = await connection_1.db.query('SELECT * FROM matches WHERE id = $1', [matchId]);
