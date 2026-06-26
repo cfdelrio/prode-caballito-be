@@ -53,6 +53,10 @@ exports.matchValidation = [
     (0, express_validator_1.body)('grupo').optional().trim().isLength({ max: 50 }).withMessage('grupo máximo 50 caracteres'),
     (0, express_validator_1.body)('jornada').optional().trim().isLength({ max: 50 }).withMessage('jornada máximo 50 caracteres'),
     (0, express_validator_1.body)('sede').optional().trim().isLength({ max: 100 }).withMessage('sede máximo 100 caracteres'),
+    (0, express_validator_1.body)('home_source_match_id').optional({ checkFalsy: true }).isUUID().withMessage('home_source_match_id debe ser UUID'),
+    (0, express_validator_1.body)('away_source_match_id').optional({ checkFalsy: true }).isUUID().withMessage('away_source_match_id debe ser UUID'),
+    (0, express_validator_1.body)('home_source_kind').optional({ checkFalsy: true }).isIn(['winner', 'loser']).withMessage('home_source_kind inválido'),
+    (0, express_validator_1.body)('away_source_kind').optional({ checkFalsy: true }).isIn(['winner', 'loser']).withMessage('away_source_kind inválido'),
     exports.validate,
 ];
 exports.matchUpdateValidation = [
@@ -70,12 +74,18 @@ exports.matchUpdateValidation = [
     (0, express_validator_1.body)('grupo').optional().trim().isLength({ max: 50 }),
     (0, express_validator_1.body)('jornada').optional().trim().isLength({ max: 50 }),
     (0, express_validator_1.body)('sede').optional().trim().isLength({ max: 100 }),
+    (0, express_validator_1.body)('home_source_match_id').optional({ checkFalsy: true }).isUUID().withMessage('home_source_match_id debe ser UUID'),
+    (0, express_validator_1.body)('away_source_match_id').optional({ checkFalsy: true }).isUUID().withMessage('away_source_match_id debe ser UUID'),
+    (0, express_validator_1.body)('home_source_kind').optional({ checkFalsy: true }).isIn(['winner', 'loser']).withMessage('home_source_kind inválido'),
+    (0, express_validator_1.body)('away_source_kind').optional({ checkFalsy: true }).isIn(['winner', 'loser']).withMessage('away_source_kind inválido'),
     exports.validate,
 ];
 exports.matchResultValidation = [
     (0, express_validator_1.param)('matchId').isUUID().withMessage('ID de match inválido'),
     (0, express_validator_1.body)('resultado_local').isInt({ min: 0, max: 99 }).withMessage('Resultado local inválido'),
     (0, express_validator_1.body)('resultado_visitante').isInt({ min: 0, max: 99 }).withMessage('Resultado visitante inválido'),
+    (0, express_validator_1.body)('penales_local').optional({ nullable: true }).isInt({ min: 0, max: 99 }).withMessage('Penales local inválido'),
+    (0, express_validator_1.body)('penales_visitante').optional({ nullable: true }).isInt({ min: 0, max: 99 }).withMessage('Penales visitante inválido'),
     exports.validate,
 ];
 exports.commentValidation = [

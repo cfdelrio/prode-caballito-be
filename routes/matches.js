@@ -14,6 +14,51 @@ const router = (0, express_1.Router)();
 
 const MATCHES_TTL = 30_000; // 30s
 
+// Resolve who advances from a knockout result. The 90' score decides; on a tie the
+// penalty shootout breaks it. Returns null sides when undecided (tie, no penalties yet).
+function resolveAdvance(rl, rv, pl, pv) {
+    if (rl > rv) return { winner: 'home', loser: 'away' };
+    if (rv > rl) return { winner: 'away', loser: 'home' };
+    if (pl != null && pv != null && pl !== pv) {
+        return pl > pv ? { winner: 'home', loser: 'away' } : { winner: 'away', loser: 'home' };
+    }
+    return { winner: null, loser: null };
+}
+
+// Propagate the advancing team into any knockout match that lists this one as a feeder.
+// One level deep per call; correcting an earlier result re-propagates to the next round.
+// Additive: matches without feeders set are untouched, so manual entry keeps working.
+async function propagateBracket(matchId, rl, rv, pl, pv) {
+    const { winner, loser } = resolveAdvance(rl, rv, pl, pv);
+    if (!winner) return; // undecided tie — nothing to advance yet
+    const srcRes = await connection_1.db.query('SELECT home_team, away_team FROM matches WHERE id = $1', [matchId]);
+    if (srcRes.rows.length === 0) return;
+    const src = srcRes.rows[0];
+    const teamOf = (side) => side === 'home' ? src.home_team : src.away_team;
+    const winnerTeam = teamOf(winner);
+    const loserTeam = teamOf(loser);
+    const deps = await connection_1.db.query(
+        `SELECT id, home_source_match_id, home_source_kind, away_source_match_id, away_source_kind
+         FROM matches WHERE home_source_match_id = $1 OR away_source_match_id = $1`, [matchId]);
+    for (const dep of deps.rows) {
+        const sets = [];
+        const params = [];
+        if (dep.home_source_match_id === matchId) {
+            params.push(dep.home_source_kind === 'loser' ? loserTeam : winnerTeam);
+            sets.push(`home_team = $${params.length}`);
+        }
+        if (dep.away_source_match_id === matchId) {
+            params.push(dep.away_source_kind === 'loser' ? loserTeam : winnerTeam);
+            sets.push(`away_team = $${params.length}`);
+        }
+        if (sets.length > 0) {
+            params.push(dep.id);
+            await connection_1.db.query(`UPDATE matches SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+        }
+    }
+    cache.invalidatePrefix('matches:');
+}
+
 // GET /matches
 // Query params: page, limit, estado (pending|live|finished), planilla_id, tournament_id
 // Used by: home, apuestas (grupos), EliminatoriaBracket (fases de torneo)
@@ -87,11 +132,11 @@ router.get('/:id', validation_1.uuidParam, async (req, res) => {
 });
 router.post('/', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matchValidation, async (req, res) => {
     try {
-        const { home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, time_cutoff, planilla_id, tournament_id, sede, grupo, jornada } = req.body;
+        const { home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, time_cutoff, planilla_id, tournament_id, sede, grupo, jornada, home_source_match_id, away_source_match_id, home_source_kind, away_source_kind } = req.body;
         const cutoffTime = time_cutoff || new Date(new Date(start_time).getTime() - 30 * 60 * 1000);
-        const result = await connection_1.db.query(`INSERT INTO matches (home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, time_cutoff, planilla_id, tournament_id, sede, grupo, jornada)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-       RETURNING *`, [home_team, away_team, home_team_pt || null, away_team_pt || null, start_time, halftime_minutes || 15, cutoffTime, planilla_id || null, tournament_id || null, sede || null, grupo || null, jornada || null]);
+        const result = await connection_1.db.query(`INSERT INTO matches (home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, time_cutoff, planilla_id, tournament_id, sede, grupo, jornada, home_source_match_id, away_source_match_id, home_source_kind, away_source_kind)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+       RETURNING *`, [home_team, away_team, home_team_pt || null, away_team_pt || null, start_time, halftime_minutes || 15, cutoffTime, planilla_id || null, tournament_id || null, sede || null, grupo || null, jornada || null, home_source_match_id || null, away_source_match_id || null, home_source_kind || null, away_source_kind || null]);
         await connection_1.db.query(`INSERT INTO audit_log (user_id, action, entity_type, entity_id, new_value, ip_address, user_agent)
        VALUES ($1, 'match_create', 'matches', $2, $3, $4, $5)`, [req.user.userId, result.rows[0].id, JSON.stringify(req.body), req.ip, req.headers['user-agent']]);
         const { schedulerService } = require('../workers/schedulerService');
@@ -108,7 +153,7 @@ router.post('/', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matchV
 router.put('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matchUpdateValidation, async (req, res) => {
     try {
         const { id } = req.params;
-        const { home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, time_cutoff, estado, finished, tournament_id, sede, grupo, jornada } = req.body;
+        const { home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, time_cutoff, estado, finished, tournament_id, sede, grupo, jornada, home_source_match_id, away_source_match_id, home_source_kind, away_source_kind } = req.body;
         const oldResult = await connection_1.db.query('SELECT * FROM matches WHERE id = $1', [id]);
         if (oldResult.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Partido no encontrado' });
@@ -128,9 +173,13 @@ router.put('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matc
         tournament_id = COALESCE($10, tournament_id),
         sede = COALESCE($11, sede),
         grupo = COALESCE($12, grupo),
-        jornada = COALESCE($13, jornada)
-       WHERE id = $14
-       RETURNING *`, [home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, calcCutoff, estado, finished, tournament_id, sede, grupo, jornada, id]);
+        jornada = COALESCE($13, jornada),
+        home_source_match_id = COALESCE($14, home_source_match_id),
+        away_source_match_id = COALESCE($15, away_source_match_id),
+        home_source_kind = COALESCE($16, home_source_kind),
+        away_source_kind = COALESCE($17, away_source_kind)
+       WHERE id = $18
+       RETURNING *`, [home_team, away_team, home_team_pt, away_team_pt, start_time, halftime_minutes, calcCutoff, estado, finished, tournament_id, sede, grupo, jornada, home_source_match_id || null, away_source_match_id || null, home_source_kind || null, away_source_kind || null, id]);
         await connection_1.db.query(`INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent)
        VALUES ($1, 'match_update', 'matches', $2, $3, $4, $5, $6)`, [req.user.userId, id, JSON.stringify(oldResult.rows[0]), JSON.stringify(result.rows[0]), req.ip, req.headers['user-agent']]);
         const { schedulerService } = require('../workers/schedulerService');
@@ -161,7 +210,7 @@ router.put('/:id', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matc
 router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, validation_1.matchResultValidation, async (req, res) => {
     try {
         const { matchId } = req.params;
-        const { resultado_local, resultado_visitante } = req.body;
+        const { resultado_local, resultado_visitante, penales_local, penales_visitante } = req.body;
         const matchResult = await connection_1.db.query('SELECT * FROM matches WHERE id = $1', [matchId]);
         if (matchResult.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Partido no encontrado' });
@@ -181,9 +230,11 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
         await connection_1.db.query(`UPDATE matches SET
         resultado_local = $1,
         resultado_visitante = $2,
+        penales_local = $3,
+        penales_visitante = $4,
         estado = 'finished',
         finished = true
-       WHERE id = $3`, [resultado_local, resultado_visitante, matchId]);
+       WHERE id = $5`, [resultado_local, resultado_visitante, penales_local ?? null, penales_visitante ?? null, matchId]);
         const betsResult = await connection_1.db.query('SELECT * FROM bets WHERE match_id = $1', [matchId]);
         if (betsResult.rows.length > 0) {
             const planillaIds = [];
@@ -214,6 +265,13 @@ router.post('/:matchId/result', auth_1.authMiddleware, auth_1.requireAdmin, vali
         await actualizarRanking(matchId);
         cache.invalidatePrefix('ranking:');
         cache.invalidatePrefix('matches:');
+
+        // Propagate the advancing team into dependent knockout matches (no-op if no feeders)
+        try {
+            await propagateBracket(matchId, resultado_local, resultado_visitante, penales_local, penales_visitante);
+        } catch (propErr) {
+            console.warn('Bracket propagation warning:', propErr.message);
+        }
 
         // Recalculate tournament ranking if match belongs to tournament
         if (match.tournament_id) {
@@ -641,4 +699,5 @@ router.post('/recalculate-ranking', async (req, res) => {
 exports.default = router;
 exports.actualizarRanking = actualizarRanking;
 exports.buildRankingChangePayload = buildRankingChangePayload;
+exports.resolveAdvance = resolveAdvance;
 //# sourceMappingURL=matches.js.map
