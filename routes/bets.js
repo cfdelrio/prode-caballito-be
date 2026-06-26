@@ -27,15 +27,47 @@ async function getTournamentCutoff(tid) {
         return new Date(new Date(t).getTime() - m * 60 * 1000);
     });
 }
-async function checkBetAllowed(match) {
-    if (match.tournament_id) {
-        const cutoff = await getTournamentCutoff(match.tournament_id);
-        if (!cutoff) return {allowed:false,error:'No se pudo determinar el cierre del torneo'};
-        if (new Date()>cutoff) return {allowed:false,error:'El tiempo para editar pronosticos del torneo ha finalizado'};
+async function getTournamentFase(tid) {
+    return cache.getOrFetch(`tournament_fase:${tid}`, async () => {
+        const r = await connection_1.db.query('SELECT fase FROM tournaments WHERE id = $1', [tid]);
+        return r.rows[0] ? (r.rows[0].fase || '') : '';
+    });
+}
+// Decide si se puede crear/editar un pronóstico. Centraliza dos modelos:
+//  - Grupos: se predice todo antes del inicio del torneo (cutoff = primer partido) y
+//    respeta el cierre de planilla (locked).
+//  - Eliminatoria (fase sin "grupo"): bracket progresivo — cada cruce cierra en su propio
+//    horario y el lock de grupos NO aplica (los equipos se definen ronda a ronda).
+// Decisión pura (sin I/O) de si se permite un pronóstico. Separada de los lookups async
+// (fase/cutoff) para poder testearla. Dos modelos según la fase:
+//   - Eliminatoria: bracket progresivo, cutoff por partido, el lock de grupos no aplica.
+//   - Grupos / sin torneo: respeta el lock y el cutoff (del torneo o del partido).
+function decideBetAllowed({ hasTournament, isEliminatoria, locked, isAdmin, now, matchCutoff, tournamentCutoff }) {
+    if (hasTournament && isEliminatoria) {
+        if (!isAdmin && matchCutoff && now > new Date(matchCutoff)) {
+            return {allowed:false,error:'El tiempo para editar este pronóstico ha finalizado'};
+        }
         return {allowed:true,error:null};
     }
-    if (new Date()>new Date(match.time_cutoff)) return {allowed:false,error:'El tiempo para editar pronosticos ha finalizado'};
+    if (locked && !isAdmin) return {allowed:false,error:'La planilla ya fue cerrada y no se puede modificar'};
+    if (hasTournament) {
+        if (!tournamentCutoff) return {allowed:false,error:'No se pudo determinar el cierre del torneo'};
+        if (now > tournamentCutoff) return {allowed:false,error:'El tiempo para editar pronosticos del torneo ha finalizado'};
+        return {allowed:true,error:null};
+    }
+    if (now > new Date(matchCutoff)) return {allowed:false,error:'El tiempo para editar pronosticos ha finalizado'};
     return {allowed:true,error:null};
+}
+async function checkBetAllowed(match, locked, rol) {
+    const isAdmin = rol === 'admin';
+    const now = new Date();
+    if (match.tournament_id) {
+        const fase = await getTournamentFase(match.tournament_id);
+        const isEliminatoria = !/grupo/i.test(fase || '');
+        const tournamentCutoff = isEliminatoria ? null : await getTournamentCutoff(match.tournament_id);
+        return decideBetAllowed({ hasTournament: true, isEliminatoria, locked, isAdmin, now, matchCutoff: match.time_cutoff, tournamentCutoff });
+    }
+    return decideBetAllowed({ hasTournament: false, isEliminatoria: false, locked, isAdmin, now, matchCutoff: match.time_cutoff, tournamentCutoff: null });
 }
 
 router.get('/planillas/:planillaId/bets', async (req, res) => {
@@ -136,16 +168,13 @@ router.post('/', auth_1.authMiddleware, validation_1.betValidation, async (req, 
         if (planillaResult.rows[0].user_id !== req.user.userId && req.user.rol === 'usuario') {
             return res.status(403).json({ success: false, error: 'No tienes permisos para esta planilla' });
         }
-        if (planillaResult.rows[0].locked && req.user.rol !== 'admin') {
-            return res.status(400).json({ success: false, error: 'La planilla ya fue cerrada y no se puede modificar' });
-        }
         const matchResult = await connection_1.db.query('SELECT * FROM matches WHERE id = $1', [match_id]);
         if (matchResult.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Partido no encontrado' });
         }
         const match = matchResult.rows[0];
         if (req.user.rol !== 'admin') {
-            const check = await checkBetAllowed(match);
+            const check = await checkBetAllowed(match, planillaResult.rows[0].locked, req.user.rol);
             if (!check.allowed) {
                 return res.status(400).json({ success: false, error: check.error });
             }
@@ -178,16 +207,13 @@ router.post('/score', auth_1.authMiddleware, validation_1.betScoreValidation, as
         if (planilla.user_id !== req.user.userId && req.user.rol !== 'admin') {
             return res.status(403).json({ success: false, error: 'No tienes permisos' });
         }
-        if (planilla.locked && req.user.rol !== 'admin') {
-            return res.status(400).json({ success: false, error: 'La planilla ya fue cerrada y no se puede modificar' });
-        }
         const matchResult = await connection_1.db.query('SELECT * FROM matches WHERE id = $1', [match_id]);
         if (matchResult.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Partido no encontrado' });
         }
         const match = matchResult.rows[0];
         if (req.user.rol !== 'admin') {
-            const check = await checkBetAllowed(match);
+            const check = await checkBetAllowed(match, planilla.locked, req.user.rol);
             if (!check.allowed) {
                 return res.status(400).json({ success: false, error: check.error });
             }
@@ -322,11 +348,8 @@ router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, re
         if (bet.user_id !== req.user.userId && req.user.rol === 'usuario') {
             return res.status(403).json({ success: false, error: 'No tienes permisos' });
         }
-        if (bet.locked && req.user.rol !== 'admin') {
-            return res.status(400).json({ success: false, error: 'La planilla ya fue cerrada y no se puede modificar' });
-        }
         if (req.user.rol !== 'admin') {
-            const check = await checkBetAllowed(bet);
+            const check = await checkBetAllowed(bet, bet.locked, req.user.rol);
             if (!check.allowed) {
                 return res.status(400).json({ success: false, error: check.error });
             }
@@ -357,11 +380,8 @@ router.delete('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req,
         if (bet.user_id !== req.user.userId && req.user.rol === 'usuario') {
             return res.status(403).json({ success: false, error: 'No tienes permisos' });
         }
-        if (bet.locked && req.user.rol !== 'admin') {
-            return res.status(400).json({ success: false, error: 'La planilla ya fue cerrada y no se puede modificar' });
-        }
         if (req.user.rol !== 'admin') {
-            const check = await checkBetAllowed(bet);
+            const check = await checkBetAllowed(bet, bet.locked, req.user.rol);
             if (!check.allowed) {
                 return res.status(400).json({ success: false, error: check.error });
             }
@@ -426,17 +446,14 @@ router.delete('/planillas/:planillaId/matches/:matchId', auth_1.authMiddleware, 
         if (planilla.user_id !== req.user.userId && req.user.rol === 'usuario') {
             return res.status(403).json({ success: false, error: 'No tienes permisos para eliminar este pronóstico' });
         }
-        if (planilla.locked && req.user.rol !== 'admin') {
-            return res.status(400).json({ success: false, error: 'La planilla ya fue cerrada y no se puede modificar' });
-        }
-        // Verificar que el cierre del torneo (5min antes del primer partido) no haya pasado
+        // Cierre según fase: grupos = cutoff del torneo + lock; eliminatoria = cutoff por partido
         const matchResult = await connection_1.db.query('SELECT time_cutoff, tournament_id FROM matches WHERE id = $1', [matchId]);
         if (matchResult.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Partido no encontrado' });
         }
         const match = matchResult.rows[0];
         if (req.user.rol !== 'admin') {
-            const check = await checkBetAllowed(match);
+            const check = await checkBetAllowed(match, planilla.locked, req.user.rol);
             if (!check.allowed) {
                 return res.status(400).json({
                     success: false,
@@ -773,5 +790,6 @@ router.put('/unlock-requests/:id/reject', auth_1.authMiddleware, async (req, res
     }
 });
 
+exports.decideBetAllowed = decideBetAllowed;
 exports.default = router;
 //# sourceMappingURL=bets.js.map
