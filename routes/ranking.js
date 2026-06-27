@@ -72,21 +72,25 @@ router.get('/', async (req, res) => {
         const paidOnly = req.query.paid_only === 'true';
         const paidClause = paidOnly ? ' AND p.precio_pagado = true' : '';
         const tournamentId = req.query.tournament_id || null;
-        // Main query: $1=limit, $2=offset, $3=tournamentId (if present)
-        const tournamentClauseMain = tournamentId
-            ? ' AND EXISTS (SELECT 1 FROM planilla_tournaments WHERE planilla_id = p.id AND tournament_id = $3)'
+        const notTournamentId = req.query.not_tournament_id || null;
+        // filterParam is either the tournament to include (EXISTS) or exclude (NOT EXISTS)
+        const filterParam = tournamentId || notTournamentId || null;
+        const filterExists = notTournamentId ? 'NOT EXISTS' : 'EXISTS';
+        // Main query: $1=limit, $2=offset, $3=filterParam (if present)
+        const tournamentClauseMain = filterParam
+            ? ` AND ${filterExists} (SELECT 1 FROM planilla_tournaments WHERE planilla_id = p.id AND tournament_id = $3)`
             : '';
-        // Count query: no $1/$2 for pagination, so tournamentId is $1
-        const tournamentClauseCount = tournamentId
-            ? ' AND EXISTS (SELECT 1 FROM planilla_tournaments WHERE planilla_id = p.id AND tournament_id = $1)'
+        // Count query: no $1/$2 for pagination, so filterParam is $1
+        const tournamentClauseCount = filterParam
+            ? ` AND ${filterExists} (SELECT 1 FROM planilla_tournaments WHERE planilla_id = p.id AND tournament_id = $1)`
             : '';
 
-        // Cache key includes tournament so filtered views don't mix with global
-        const cacheKey = `ranking:${page}:${limit}:${paidOnly}:${tournamentId || 'all'}`;
+        // Cache key includes both filter params so views don't mix
+        const cacheKey = `ranking:${page}:${limit}:${paidOnly}:${tournamentId ? `in:${tournamentId}` : notTournamentId ? `not:${notTournamentId}` : 'all'}`;
         let rankingData = cache.get(cacheKey);
 
         if (!rankingData) {
-            const queryParams = tournamentId ? [limit, offset, tournamentId] : [limit, offset];
+            const queryParams = filterParam ? [limit, offset, filterParam] : [limit, offset];
             const result = await connection_1.db.query(`
           SELECT
             COALESCE(r.puntos_totales, 0) as puntos_totales,
@@ -127,7 +131,7 @@ router.get('/', async (req, res) => {
           SELECT COUNT(*) FROM planillas p
           LEFT JOIN ranking r ON r.planilla_id = p.id
           WHERE 1=1 ${paidClause} ${tournamentClauseCount}
-        `, tournamentId ? [tournamentId] : []);
+        `, filterParam ? [filterParam] : []);
             rankingData = {
                 ranking: result.rows.map(row => ({
                     ...row,
