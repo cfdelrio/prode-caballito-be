@@ -135,7 +135,7 @@ router.get('/', async (req, res) => {
             rankingData = {
                 ranking: result.rows.map(row => ({
                     ...row,
-                    position: Number(row.official_position || row.virtual_position),
+                    position: Number(filterParam ? row.virtual_position : (row.official_position || row.virtual_position)),
                     is_virtual: !row.precio_pagado,
                 })),
                 total: parseInt(countResult.rows[0].count),
