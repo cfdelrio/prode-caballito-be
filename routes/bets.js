@@ -441,16 +441,39 @@ router.get('/all-for-matrix', auth_1.authMiddleware, async (req, res) => {
 
         const result = await connection_1.db.query(query, params);
 
+        // Pre-cargar fase + cutoff por torneo (una vez por torneo, no por bet).
+        // Dos modelos de cutoff según la fase:
+        //   - Grupos: cutoff del torneo (primer partido). Pasado eso → TODAS las apuestas visibles.
+        //   - Eliminatoria: cutoff por partido individual.
+        const tournamentIds = [...new Set(result.rows.map(b => b.tournament_id).filter(Boolean))];
+        const tournamentCutoffInfo = new Map();
+        await Promise.all(tournamentIds.map(async (tid) => {
+            const fase = await getTournamentFase(tid);
+            const isEliminatoria = !/grupo/i.test(fase || '');
+            const tournamentCutoff = isEliminatoria ? null : await getTournamentCutoff(tid);
+            tournamentCutoffInfo.set(tid, { isEliminatoria, tournamentCutoff });
+        }));
+
+        // Calcula si la apuesta de OTRO usuario ya es visible (pasó la veda).
+        const isBetVisible = (bet) => {
+            const info = bet.tournament_id ? tournamentCutoffInfo.get(bet.tournament_id) : null;
+            // Grupos: usa el cutoff del torneo (desbloquea todo de una vez)
+            if (info && !info.isEliminatoria) {
+                return info.tournamentCutoff ? now >= info.tournamentCutoff : true;
+            }
+            // Eliminatoria o sin torneo: cutoff por partido
+            const timeCutoff = bet.time_cutoff ? new Date(bet.time_cutoff) : null;
+            return timeCutoff ? now >= timeCutoff : true;
+        };
+
         // Agrupar por planilla_id, respetando cutoff
         const betsByPlanilla = {};
         for (const bet of result.rows) {
             const isOwnBet = String(bet.user_id).toLowerCase() === String(currentUserId).toLowerCase();
-            const timeCutoff = bet.time_cutoff ? new Date(bet.time_cutoff) : null;
-            const cutoffPassed = timeCutoff ? now >= timeCutoff : true;
 
-            // Solo mostrar si es apuesta propia O si pasó el cutoff del partido
-            if (!isOwnBet && timeCutoff && now < timeCutoff) {
-                continue; // Ocultar apuesta de otro usuario si no pasó el cutoff
+            // Solo mostrar si es apuesta propia O si ya pasó la veda
+            if (!isOwnBet && !isBetVisible(bet)) {
+                continue; // Ocultar apuesta de otro usuario en período de veda
             }
 
             if (!betsByPlanilla[bet.planilla_id]) {
