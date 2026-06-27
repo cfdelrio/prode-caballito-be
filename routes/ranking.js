@@ -71,12 +71,26 @@ router.get('/', async (req, res) => {
         const offset = (page - 1) * limit;
         const paidOnly = req.query.paid_only === 'true';
         const paidClause = paidOnly ? ' AND p.precio_pagado = true' : '';
+        const tournamentId = req.query.tournament_id || null;
+        const notTournamentId = req.query.not_tournament_id || null;
+        // filterParam is either the tournament to include (EXISTS) or exclude (NOT EXISTS)
+        const filterParam = tournamentId || notTournamentId || null;
+        const filterExists = notTournamentId ? 'NOT EXISTS' : 'EXISTS';
+        // Main query: $1=limit, $2=offset, $3=filterParam (if present)
+        const tournamentClauseMain = filterParam
+            ? ` AND ${filterExists} (SELECT 1 FROM planilla_tournaments WHERE planilla_id = p.id AND tournament_id = $3)`
+            : '';
+        // Count query: no $1/$2 for pagination, so filterParam is $1
+        const tournamentClauseCount = filterParam
+            ? ` AND ${filterExists} (SELECT 1 FROM planilla_tournaments WHERE planilla_id = p.id AND tournament_id = $1)`
+            : '';
 
-        // Cache the shared ranking list — user-specific position added below
-        const cacheKey = `ranking:${page}:${limit}:${paidOnly}`;
+        // Cache key includes both filter params so views don't mix
+        const cacheKey = `ranking:${page}:${limit}:${paidOnly}:${tournamentId ? `in:${tournamentId}` : notTournamentId ? `not:${notTournamentId}` : 'all'}`;
         let rankingData = cache.get(cacheKey);
 
         if (!rankingData) {
+            const queryParams = filterParam ? [limit, offset, filterParam] : [limit, offset];
             const result = await connection_1.db.query(`
           SELECT
             COALESCE(r.puntos_totales, 0) as puntos_totales,
@@ -104,7 +118,7 @@ router.get('/', async (req, res) => {
           FROM planillas p
           LEFT JOIN ranking r ON r.planilla_id = p.id
           JOIN users u ON p.user_id = u.id
-          WHERE 1=1 ${paidClause}
+          WHERE 1=1 ${paidClause} ${tournamentClauseMain}
           ORDER BY
             COALESCE(r.puntos_totales, 0) DESC,
             COALESCE(r.aciertos_celeste, 0) DESC,
@@ -112,12 +126,12 @@ router.get('/', async (req, res) => {
             COALESCE(r.aciertos_verde, 0) DESC,
             COALESCE(r.aciertos_amarillo, 0) DESC
           LIMIT $1 OFFSET $2
-        `, [limit, offset]);
+        `, queryParams);
             const countResult = await connection_1.db.query(`
           SELECT COUNT(*) FROM planillas p
           LEFT JOIN ranking r ON r.planilla_id = p.id
-          WHERE 1=1 ${paidClause}
-        `);
+          WHERE 1=1 ${paidClause} ${tournamentClauseCount}
+        `, filterParam ? [filterParam] : []);
             rankingData = {
                 ranking: result.rows.map(row => ({
                     ...row,
