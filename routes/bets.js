@@ -396,41 +396,63 @@ router.delete('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req,
     }
 });
 // Endpoint optimizado para la matriz - carga todas las apuestas de todas las planillas en 1 query
-router.get('/all-for-matrix', async (req, res) => {
+router.get('/all-for-matrix', auth_1.authMiddleware, async (req, res) => {
     try {
         const { tournament_id, not_tournament_id } = req.query;
+        const currentUserId = req.user.userId;
+        const now = new Date();
+
         let query = `
       SELECT
         b.planilla_id,
         b.match_id,
         b.goles_local,
-        b.goles_visitante
+        b.goles_visitante,
+        p.user_id,
+        m.time_cutoff,
+        m.tournament_id
       FROM bets b
       JOIN planillas p ON b.planilla_id = p.id
+      JOIN matches m ON b.match_id = m.id
     `;
         const params = [];
+        let paramCount = 1;
 
         if (tournament_id) {
             query += `
       LEFT JOIN planilla_tournaments pt ON p.id = pt.planilla_id
-      WHERE pt.tournament_id = $1
+      WHERE pt.tournament_id = $${paramCount}
     `;
             params.push(tournament_id);
+            paramCount++;
         } else if (not_tournament_id) {
             query += `
       WHERE NOT EXISTS (
-        SELECT 1 FROM planilla_tournaments WHERE planilla_id = p.id AND tournament_id = $1
+        SELECT 1 FROM planilla_tournaments WHERE planilla_id = p.id AND tournament_id = $${paramCount}
       )
     `;
             params.push(not_tournament_id);
+            paramCount++;
+        } else {
+            query += ` WHERE 1=1`;
         }
 
         query += ` ORDER BY b.planilla_id, b.match_id`;
 
         const result = await connection_1.db.query(query, params);
-        // Agrupar por planilla_id
+
+        // Agrupar por planilla_id, respetando cutoff
         const betsByPlanilla = {};
-        result.rows.forEach((bet) => {
+        for (const bet of result.rows) {
+            const isOwnBet = String(bet.user_id).toLowerCase() === String(currentUserId).toLowerCase();
+            const timeCutoff = bet.time_cutoff ? new Date(bet.time_cutoff) : null;
+            const cutoffPassed = timeCutoff ? now >= timeCutoff : true;
+
+            // Solo mostrar si es apuesta propia O si pasó el cutoff del partido
+            if (!isOwnBet && timeCutoff && now < timeCutoff) {
+                continue; // Ocultar apuesta de otro usuario si no pasó el cutoff
+            }
+
             if (!betsByPlanilla[bet.planilla_id]) {
                 betsByPlanilla[bet.planilla_id] = {};
             }
@@ -438,7 +460,8 @@ router.get('/all-for-matrix', async (req, res) => {
                 home: bet.goles_local,
                 away: bet.goles_visitante
             };
-        });
+        }
+
         res.json({
             success: true,
             data: betsByPlanilla,
