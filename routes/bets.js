@@ -398,7 +398,8 @@ router.delete('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req,
 // Endpoint optimizado para la matriz - carga todas las apuestas de todas las planillas en 1 query
 router.get('/all-for-matrix', async (req, res) => {
     try {
-        const result = await connection_1.db.query(`
+        const { tournament_id, not_tournament_id } = req.query;
+        let query = `
       SELECT
         b.planilla_id,
         b.match_id,
@@ -406,8 +407,27 @@ router.get('/all-for-matrix', async (req, res) => {
         b.goles_visitante
       FROM bets b
       JOIN planillas p ON b.planilla_id = p.id
-      ORDER BY b.planilla_id, b.match_id
-    `);
+    `;
+        const params = [];
+
+        if (tournament_id) {
+            query += `
+      LEFT JOIN planilla_tournaments pt ON p.id = pt.planilla_id
+      WHERE pt.tournament_id = $1
+    `;
+            params.push(tournament_id);
+        } else if (not_tournament_id) {
+            query += `
+      WHERE NOT EXISTS (
+        SELECT 1 FROM planilla_tournaments WHERE planilla_id = p.id AND tournament_id = $1
+      )
+    `;
+            params.push(not_tournament_id);
+        }
+
+        query += ` ORDER BY b.planilla_id, b.match_id`;
+
+        const result = await connection_1.db.query(query, params);
         // Agrupar por planilla_id
         const betsByPlanilla = {};
         result.rows.forEach((bet) => {
