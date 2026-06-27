@@ -444,13 +444,13 @@ router.get('/all-for-matrix', auth_1.authMiddleware, async (req, res) => {
         // Agrupar por planilla_id, respetando cutoff
         const betsByPlanilla = {};
         for (const bet of result.rows) {
-            const isOwnBet = bet.user_id === currentUserId;
+            const isOwnBet = String(bet.user_id).toLowerCase() === String(currentUserId).toLowerCase();
             const timeCutoff = bet.time_cutoff ? new Date(bet.time_cutoff) : null;
             const cutoffPassed = timeCutoff ? now >= timeCutoff : true;
 
-            // Solo mostrar si es apuesta propia O si pasó el cutoff
-            if (!isOwnBet && !cutoffPassed) {
-                continue; // Ocultar apuesta de otro usuario antes del cutoff
+            // Solo mostrar si es apuesta propia O si pasó el cutoff del partido
+            if (!isOwnBet && timeCutoff && now < timeCutoff) {
+                continue; // Ocultar apuesta de otro usuario si no pasó el cutoff
             }
 
             if (!betsByPlanilla[bet.planilla_id]) {
