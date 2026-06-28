@@ -33,6 +33,16 @@ async function getTournamentFase(tid) {
         return r.rows[0] ? (r.rows[0].fase || '') : '';
     });
 }
+// Cierre de una ronda de eliminatoria: toda la jornada cierra con el primer
+// partido. El cutoff de la ronda = el MIN(time_cutoff) de sus partidos.
+async function getRoundCutoff(tid, jornada) {
+    if (jornada === null || jornada === undefined) return null;
+    return cache.getOrFetch(`round_cutoff:${tid}:${jornada}`, async () => {
+        const r = await connection_1.db.query('SELECT MIN(time_cutoff) as t FROM matches WHERE tournament_id = $1 AND jornada = $2', [tid, jornada]);
+        const t = r.rows[0] && r.rows[0].t;
+        return t ? new Date(t) : null;
+    });
+}
 // Decide si se puede crear/editar un pronóstico. Centraliza dos modelos:
 //  - Grupos: se predice todo antes del inicio del torneo (cutoff = primer partido) y
 //    respeta el cierre de planilla (locked).
@@ -40,12 +50,13 @@ async function getTournamentFase(tid) {
 //    horario y el lock de grupos NO aplica (los equipos se definen ronda a ronda).
 // Decisión pura (sin I/O) de si se permite un pronóstico. Separada de los lookups async
 // (fase/cutoff) para poder testearla. Dos modelos según la fase:
-//   - Eliminatoria: bracket progresivo, cutoff por partido, el lock de grupos no aplica.
+//   - Eliminatoria: cutoff por RONDA — toda la jornada cierra con el primer partido;
+//     el lock de grupos no aplica (los equipos se definen ronda a ronda).
 //   - Grupos / sin torneo: respeta el lock y el cutoff (del torneo o del partido).
-function decideBetAllowed({ hasTournament, isEliminatoria, locked, isAdmin, now, matchCutoff, tournamentCutoff }) {
+function decideBetAllowed({ hasTournament, isEliminatoria, locked, isAdmin, now, matchCutoff, tournamentCutoff, roundCutoff }) {
     if (hasTournament && isEliminatoria) {
-        if (!isAdmin && matchCutoff && now > new Date(matchCutoff)) {
-            return {allowed:false,error:'El tiempo para editar este pronóstico ha finalizado'};
+        if (!isAdmin && roundCutoff && now > new Date(roundCutoff)) {
+            return {allowed:false,error:'La ronda ya cerró: se apuesta hasta el inicio del primer partido de la ronda'};
         }
         return {allowed:true,error:null};
     }
@@ -65,9 +76,10 @@ async function checkBetAllowed(match, locked, rol) {
         const fase = await getTournamentFase(match.tournament_id);
         const isEliminatoria = !/grupo/i.test(fase || '');
         const tournamentCutoff = isEliminatoria ? null : await getTournamentCutoff(match.tournament_id);
-        return decideBetAllowed({ hasTournament: true, isEliminatoria, locked, isAdmin, now, matchCutoff: match.time_cutoff, tournamentCutoff });
+        const roundCutoff = isEliminatoria ? await getRoundCutoff(match.tournament_id, match.jornada) : null;
+        return decideBetAllowed({ hasTournament: true, isEliminatoria, locked, isAdmin, now, matchCutoff: match.time_cutoff, tournamentCutoff, roundCutoff });
     }
-    return decideBetAllowed({ hasTournament: false, isEliminatoria: false, locked, isAdmin, now, matchCutoff: match.time_cutoff, tournamentCutoff: null });
+    return decideBetAllowed({ hasTournament: false, isEliminatoria: false, locked, isAdmin, now, matchCutoff: match.time_cutoff, tournamentCutoff: null, roundCutoff: null });
 }
 
 router.get('/planillas/:planillaId/bets', async (req, res) => {
@@ -336,7 +348,7 @@ router.put('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req, re
         await ensureLockedColumn();
         const { id } = req.params;
         const { goles_local, goles_visitante } = req.body;
-        const betResult = await connection_1.db.query(`SELECT b.*, p.user_id, p.locked, m.time_cutoff, m.tournament_id
+        const betResult = await connection_1.db.query(`SELECT b.*, p.user_id, p.locked, m.time_cutoff, m.tournament_id, m.jornada
        FROM bets b
        JOIN planillas p ON b.planilla_id = p.id
        JOIN matches m ON b.match_id = m.id
@@ -368,7 +380,7 @@ router.delete('/:id', auth_1.authMiddleware, validation_1.uuidParam, async (req,
     try {
         await ensureLockedColumn();
         const { id } = req.params;
-        const betResult = await connection_1.db.query(`SELECT b.*, p.user_id, p.locked, m.time_cutoff, m.tournament_id
+        const betResult = await connection_1.db.query(`SELECT b.*, p.user_id, p.locked, m.time_cutoff, m.tournament_id, m.jornada
        FROM bets b
        JOIN planillas p ON b.planilla_id = p.id
        JOIN matches m ON b.match_id = m.id
@@ -410,7 +422,8 @@ router.get('/all-for-matrix', auth_1.authMiddleware, async (req, res) => {
         b.goles_visitante,
         p.user_id,
         m.time_cutoff,
-        m.tournament_id
+        m.tournament_id,
+        m.jornada
       FROM bets b
       JOIN planillas p ON b.planilla_id = p.id
       JOIN matches m ON b.match_id = m.id
@@ -444,7 +457,7 @@ router.get('/all-for-matrix', auth_1.authMiddleware, async (req, res) => {
         // Pre-cargar fase + cutoff por torneo (una vez por torneo, no por bet).
         // Dos modelos de cutoff según la fase:
         //   - Grupos: cutoff del torneo (primer partido). Pasado eso → TODAS las apuestas visibles.
-        //   - Eliminatoria: cutoff por partido individual.
+        //   - Eliminatoria: cutoff por RONDA — toda la jornada se revela al cerrar su primer partido.
         const tournamentIds = [...new Set(result.rows.map(b => b.tournament_id).filter(Boolean))];
         const tournamentCutoffInfo = new Map();
         await Promise.all(tournamentIds.map(async (tid) => {
@@ -454,14 +467,28 @@ router.get('/all-for-matrix', auth_1.authMiddleware, async (req, res) => {
             tournamentCutoffInfo.set(tid, { isEliminatoria, tournamentCutoff });
         }));
 
+        // Para eliminatoria, pre-cargar el cutoff de cada ronda presente (torneo+jornada).
+        const roundCutoffCache = new Map();
+        await Promise.all([...new Set(result.rows
+            .filter(b => { const i = tournamentCutoffInfo.get(b.tournament_id); return i && i.isEliminatoria && b.jornada != null; })
+            .map(b => `${b.tournament_id}|${b.jornada}`))].map(async (key) => {
+                const [tid, jornada] = key.split('|');
+                roundCutoffCache.set(key, await getRoundCutoff(tid, Number(jornada)));
+            }));
+
         // Calcula si la apuesta de OTRO usuario ya es visible (pasó la veda).
         const isBetVisible = (bet) => {
             const info = bet.tournament_id ? tournamentCutoffInfo.get(bet.tournament_id) : null;
-            // Grupos: usa el cutoff del torneo (desbloquea todo de una vez)
-            if (info && !info.isEliminatoria) {
+            if (info && info.isEliminatoria) {
+                // Eliminatoria: la ronda entera se revela al cerrar su primer partido.
+                const rc = bet.jornada != null ? roundCutoffCache.get(`${bet.tournament_id}|${bet.jornada}`) : null;
+                return rc ? now >= rc : true;
+            }
+            if (info) {
+                // Grupos: cutoff del torneo (desbloquea todo de una vez)
                 return info.tournamentCutoff ? now >= info.tournamentCutoff : true;
             }
-            // Eliminatoria o sin torneo: cutoff por partido
+            // Sin torneo: cutoff por partido
             const timeCutoff = bet.time_cutoff ? new Date(bet.time_cutoff) : null;
             return timeCutoff ? now >= timeCutoff : true;
         };
@@ -513,7 +540,7 @@ router.delete('/planillas/:planillaId/matches/:matchId', auth_1.authMiddleware, 
             return res.status(403).json({ success: false, error: 'No tienes permisos para eliminar este pronóstico' });
         }
         // Cierre según fase: grupos = cutoff del torneo + lock; eliminatoria = cutoff por partido
-        const matchResult = await connection_1.db.query('SELECT time_cutoff, tournament_id FROM matches WHERE id = $1', [matchId]);
+        const matchResult = await connection_1.db.query('SELECT time_cutoff, tournament_id, jornada FROM matches WHERE id = $1', [matchId]);
         if (matchResult.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Partido no encontrado' });
         }
