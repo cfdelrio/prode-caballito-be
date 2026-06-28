@@ -9,6 +9,9 @@ const email_1 = require("../services/email");
 const cache = require("../services/cache");
 const router = (0, express_1.Router)();
 
+// TTL corto para cutoffs: si un admin mueve el cierre, aplica en ≤30s (antes 5 min).
+const CUTOFF_TTL_MS = 30_000;
+
 let _lockedColEnsured = false;
 async function ensureLockedColumn() {
     if (_lockedColEnsured) return;
@@ -25,7 +28,7 @@ async function getTournamentCutoff(tid) {
         let m = 5;
         if (c.rows.length > 0) { const v = c.rows[0].value; m = Number(typeof v === 'string' ? JSON.parse(v) : v) || 5; }
         return new Date(new Date(t).getTime() - m * 60 * 1000);
-    });
+    }, CUTOFF_TTL_MS);
 }
 async function getTournamentFase(tid) {
     return cache.getOrFetch(`tournament_fase:${tid}`, async () => {
@@ -41,7 +44,7 @@ async function getRoundCutoff(tid, jornada) {
         const r = await connection_1.db.query('SELECT MIN(time_cutoff) as t FROM matches WHERE tournament_id = $1 AND jornada = $2', [tid, jornada]);
         const t = r.rows[0] && r.rows[0].t;
         return t ? new Date(t) : null;
-    });
+    }, CUTOFF_TTL_MS);
 }
 // Decide si se puede crear/editar un pronóstico. Centraliza dos modelos:
 //  - Grupos: se predice todo antes del inicio del torneo (cutoff = primer partido) y
